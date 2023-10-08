@@ -80,10 +80,10 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    // Begin timing
     double start_time = monotonic_seconds();
 
     // Preprocessing step: Compute X^T and denominator values
+    // Initialize w to all 0s
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < dim_points; i++) {
         double sum = 0;
@@ -95,17 +95,13 @@ int main(int argc, char** argv)
             ptr += dim_points;
         }
         denom_vals[i] = sum;
-    }
-
-    // Initialize w to all 0s
-    for (int i = 0; i < dim_points; i++) {
         w[i] = 0;
     }
 
     // Initialize Xw to all 0s
+    #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < num_points; i++) {
         Xw[i] = 0;
-
     }
 
     // Apply the algorithm
@@ -113,37 +109,44 @@ int main(int argc, char** argv)
 
         // Compute the new w vector
         for (int i = 0; i < dim_points; i++) {
-            double* row = XT + i*num_points;
-            double wi_new = 0;
 
             // Compute new w_i value if denominator is not 0
             // Otherwise, leave w_i as 0
-            if (denom_vals[i]) {
-                double numerator = 0;
-                for (int j = 0; j < num_points; j++) {
-                    double Xwm = Xw[j] - row[j]*w[i];
-                    numerator += row[j] * (labels[j] - Xwm);
-                }
-                wi_new = numerator / denom_vals[i];
+            if (denom_vals[i] == 0) {
+                continue;
             }
 
+            double* row = XT + i*num_points;
+
+            // Compute new w_i value
+            double numerator = 0;
+            #pragma omp parallel for num_threads(threads) reduction(+:numerator)
+            for (int j = 0; j < num_points; j++) {
+                double Xw_minusi = Xw[j] - row[j]*w[i]; // The jth number in X_{-i}*w_{-i}
+                numerator += row[j] * (labels[j] - Xw_minusi);
+            }
+
+            double wi_new = numerator / denom_vals[i];
+
             // Update X*w vector
+            #pragma omp parallel for num_threads(threads)
             for (int j = 0; j < num_points; j++) {
                 Xw[j] += row[j] * (wi_new-w[i]);
             }
+
             w[i] = wi_new;
         }
 
         // Compute and print out the loss
         double loss = 0;
+        #pragma omp parallel for num_threads(threads) reduction(+:loss)
         for (int i = 0; i < num_points; i++) {
-            double val = Xw[i] - labels[i];
-            loss += val * val;
+            double diff = Xw[i] - labels[i];
+            loss += diff * diff;
         }
         printf("Iteration %d loss: %lf\n", iter+1, loss);
     }
 
-    // Finish timing
     double end_time = monotonic_seconds();
 
     printf("\n");
