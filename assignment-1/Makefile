@@ -1,6 +1,7 @@
+datadir = dataset
 dataset = small
-points = dataset/$(dataset)_data.csv
-labels = dataset/$(dataset)_label.csv
+points = $(datadir)/$(dataset)_data.csv
+labels = $(datadir)/$(dataset)_label.csv
 
 ifeq ($(dataset), small)
 	iters = 10
@@ -21,15 +22,6 @@ lc_pthreads: lc_pthreads.c utils.o
 lc_openmp: lc_openmp.c utils.o
 	gcc -o lc_openmp lc_openmp.c utils.o -fopenmp
 
-clean:
-	rm -f lc_pthreads lc_openmp lc_serial $(id).tar.gz *.o
-
-zip: clean
-	mkdir $(id)
-	cp $(files) $(id)
-	tar czvf $(id).tar.gz $(id)
-	rm -rf $(id)
-
 test: test-pthreads test-openmp
 
 test-pthreads: lc_pthreads
@@ -38,10 +30,20 @@ test-pthreads: lc_pthreads
 test-openmp: lc_openmp
 	./lc_openmp $(points) $(labels) $(iters) $(threads)
 
+time: time-pthreads time-openmp
 
-lc_serial: lc_serial.c utils.o
-	gcc -o lc_serial lc_serial.c utils.o
+time-pthreads:
+	make test-pthreads | grep "Execution time"
 
-test-serial: lc_serial
-	./lc_serial $(points) $(labels) $(iters)
+time-openmp:
+	make test-openmp | grep "Execution time"
+
+clean:
+	rm -f lc_pthreads lc_openmp lc_serial $(id).tar.gz *.o
+
+zip: clean
+	mkdir $(id)
+	cp $(files) $(id)
+	tar czvf $(id).tar.gz $(id)
+	rm -rf $(id)
 

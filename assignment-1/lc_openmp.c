@@ -154,7 +154,7 @@ int main(int argc, char** argv)
 
     printf("\nFinal weights:\n");
     for (int i = 0; i < dim_points; i++) {
-        printf("%lf\n", w[i]);
+        printf("%d: %lf\n", i, w[i]);
     }
 
     free(points);

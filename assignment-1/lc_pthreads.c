@@ -38,8 +38,10 @@ static void print_time(double const seconds)
 int count;
 int threads;
 pthread_mutex_t lock;
+pthread_barrier_t barrier;
 
 // Global variables that are part of the algorithm
+int iterations;
 int num_points; // n
 int dim_points; // m
 double* points; // X
@@ -48,6 +50,9 @@ double* denom_vals; // Denominator values
 double* XT; // X^T
 double* Xw; // X*w
 double* w;
+
+double numerator;
+double loss;
 
 /**
  * @brief Clean up global variables
@@ -76,24 +81,46 @@ void cleanup(int step)
     }
 
     pthread_mutex_destroy(&lock);
+
+    if (step < 3) {
+        return;
+    }
+
+    pthread_barrier_destroy(&barrier);
 }
 
-void* init_func(void* ptr)
+void* set_ranges(int* start1, int* end1, int* start2, int* end2)
 {
-    // Get id for thread
+    // Get index of thread
     pthread_mutex_lock(&lock);
-    int id = count++;
+    int i = count++;
     pthread_mutex_unlock(&lock);
 
-    // Determine range to iterate over
+    // Determine range to iterate over for dim_points
     int a = dim_points / threads;
     int b = dim_points % threads;
-    int start = a*id + (id<b ? id : b);;
-    int end = start + a + (id<b);
+    *start1 = a*i + (i<b ? i : b);
+    *end1 = *start1 + a + (i<b);
+
+    // Determine range to iterate over for num_points
+    int c = num_points / threads;
+    int d = num_points % threads;
+    *start2 = c*i + (i<d ? i : d);
+    *end2 = *start2 + c + (i<d);
+}
+
+void* thread_func(void* is_main)
+{
+    // Get ranges to perform work on
+    int start1;
+    int end1;
+    int start2;
+    int end2;
+    set_ranges(&start1, &end1, &start2, &end2);
 
     // Compute X^T and denominator values
     // Initialize w to all 0s
-    for (int i = start; i < end; i++) {
+    for (int i = start1; i < end1; i++) {
         double sum = 0;
         double* ptr = points + i;
         double* row = XT + i*num_points;
@@ -107,70 +134,82 @@ void* init_func(void* ptr)
         w[i] = 0;
     }
 
-    // Determine range to iterate over
-    a = num_points / threads;
-    b = num_points % threads;
-    start = a*id + (id<b ? id : b);;
-    end = start + a + (id<b);
-
     // Initialize Xw to all 0s
-    for (int i = start; i < end; i++) {
+    for (int i = start2; i < end2; i++) {
         Xw[i] = 0;
     }
 
-    return NULL;
-}
+    loss = 0;
 
-typedef struct {
-    int i;
-    double* row;
-    //double wi_new;
-} args_t;
+    // Apply the algorithm
+    for (int iter = 0; iter < iterations; iter++) {
+        
+        for (int i = 0; i < dim_points; i++) {
 
-void* compute_numerator(void* ptr)
-{
-    args_t* args = (args_t*) ptr;
+            // Compute new w_i value if denominator is not 0
+            // Otherwise, leave w_i as 0
+            if (denom_vals[i] == 0) {
+                continue;
+            }
 
-    // Get id for thread
-    pthread_mutex_lock(&lock);
-    int id = count++;
-    pthread_mutex_unlock(&lock);
+            if (is_main) {
+                numerator = 0;
+            }
 
-    // Determine range to iterate over
-    int a = num_points / threads;
-    int b = num_points % threads;
-    int start = a*id + (id<b ? id : b);;
-    int end = start + a + (id<b);
+            double *row = XT + i*num_points;
 
-    // Compute new w_i value
-    double sum = 0;
-    for (int j = start; j < end; j++) {
-        double Xw_minusi = Xw[j] - args->row[j]*w[args->i]; // The jth number in X_{-i}*w_{-i}
-        sum += args->row[j] * (labels[j] - Xw_minusi);
+            // Wait until initialization/previous step finished
+            pthread_barrier_wait(&barrier);
+
+            // Compute sum
+            double sum = 0;
+            for (int j = start2; j < end2; j++) {
+                // The jth number in X_-i * w_-i
+                double Xw_minusi = Xw[j] - (row[j])*w[i];
+
+                sum += row[j] * (labels[j] - Xw_minusi);
+            }
+
+            // Add sum to numerator
+            pthread_mutex_lock(&lock);
+            numerator += sum;
+            pthread_mutex_unlock(&lock);
+
+            // Wait until numerator computed
+            pthread_barrier_wait(&barrier);
+
+            // Update X*w vector
+            double wi_new = numerator / denom_vals[i];
+            for (int j = start2; j < end2; j++) {
+                Xw[j] += row[j] * (wi_new - w[i]);
+            }
+
+            // Wait until Xw updated
+            pthread_barrier_wait(&barrier);
+
+            if (is_main) {
+                w[i] = numerator / denom_vals[i];
+            }
+        }
+
+        // Compute sum
+        double sum = 0;
+        for (int i = start2; i < end2; i++) {
+            double diff = Xw[i] - labels[i];
+            sum += diff * diff;
+        }
+
+        // Add sum to loss
+        pthread_mutex_lock(&lock);
+        loss += sum;
+        pthread_mutex_unlock(&lock);
+
+        pthread_barrier_wait(&barrier);
+        if (is_main) {
+            printf("Iteration %d loss: %lf\n", iter+1, loss);
+            loss = 0;
+        }
     }
-
-    return (void*) sum;
-}
-
-void* update_Xw(void* ptr)
-{
-    // Get id for thread
-    pthread_mutex_lock(&lock);
-    int id = count++;
-    pthread_mutex_unlock(&lock);
-
-    // Determine range to iterate over
-    int a = num_points / threads;
-    int b = num_points % threads;
-    int start = a*id + (id<b ? id : b);;
-    int end = start + a + (id<b);
-
-    // Update X*w vector
-    //for (int j = start; j < end; j++) {
-    //    Xw[j] += row[j] * (wi_new-w[i]);
-    //}
-
-    //w[i] = wi_new;
 }
 
 int main(int argc, char** argv)
@@ -180,7 +219,7 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    int iterations = atoi(argv[3]);
+    iterations = atoi(argv[3]);
     if (iterations == 0) {
         perror("atoi");
         return -1;
@@ -215,77 +254,36 @@ int main(int argc, char** argv)
         return -1;
     }
 
+    result = pthread_barrier_init(&barrier, NULL, threads);
+    if (result) {
+        perror("pthread_barrier_init");
+        cleanup(2);
+        return -1;
+    }
+
     pthread_t* thread_handles = malloc((threads-1) * sizeof(thread_handles));
     if (thread_handles == NULL) {
         perror("malloc");
-        cleanup(2);
+        cleanup(3);
         return -1;
     }
 
     // Begin timing
     double start_time = monotonic_seconds();
 
-    //// Initialization step
     // Create threads
     count = 0;
     for (int i = 0; i < threads-1; i++) {
-        pthread_create(&thread_handles[i], NULL, init_func, NULL);
+        int is_main = 0;
+        pthread_create(&thread_handles[i], NULL, thread_func, NULL);
     }
-    init_func(NULL); // Perform work in main thread
 
-    // Clean up
+    // Perform work in main thread
+    thread_func(NULL + 1);
+
+    // Join threads
     for (int i = 0; i < threads-1; i++) {
         pthread_join(thread_handles[i], NULL);
-    }
-
-    // Apply the algorithm
-    for (int iter = 0; iter < iterations; iter++) {
-
-        // Compute the new w vector
-        for (int i = 0; i < dim_points; i++) {
-            args_t args = {
-                .i = i,
-                .row = XT + i*num_points,
-            };
-
-            // Compute new w_i value if denominator is not 0
-            // Otherwise, leave w_i as 0
-            if (denom_vals[i] == 0) {
-                continue;
-            }
-
-            //// Compute numerator
-            // Create threads
-            count = 0;
-            for (int i = 0; i < threads-1; i++) {
-                pthread_create(&thread_handles[i], NULL, compute_numerator, &i);
-            }
-            double numerator = (double) compute_numerator(&i); // Perform work in main thread
-
-            // Clean up
-            for (int i = 0; i < threads-1; i++) {
-                void* retval;
-                pthread_join(thread_handles[i], &retval);
-                numerator += (double) retval;
-            }
-
-            double wi_new = numerator / denom_vals[i];
-
-            // Update X*w vector
-            for (int j = 0; j < num_points; j++) {
-                Xw[j] += args->row[j] * (wi_new-w[i]);
-            }
-
-            w[i] = wi_new;
-        }
-
-        // Compute and print out the loss
-        double loss = 0;
-        for (int i = 0; i < num_points; i++) {
-            double val = Xw[i] - labels[i];
-            loss += val * val;
-        }
-        printf("Iteration %d loss: %lf\n", iter+1, loss);
     }
 
     // Finish timing
@@ -295,7 +293,7 @@ int main(int argc, char** argv)
 
     printf("\nFinal weights:\n");
     for (int i = 0; i < dim_points; i++) {
-        printf("%lf\n", w[i]);
+        printf("%d: %lf\n", i, w[i]);
     }
 
     cleanup(3);

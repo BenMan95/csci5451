@@ -195,8 +195,6 @@ setlocal nowinfixheight
 setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
-37
-normal! zo
 let s:l = 167 - ((29 * winheight(0) + 21) / 42)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
@@ -347,31 +345,15 @@ normal! zo
 normal! zo
 77
 normal! zo
-87
+88
 normal! zo
-91
+108
 normal! zo
-101
+111
 normal! zo
-107
+124
 normal! zo
-112
-normal! zo
-115
-normal! zo
-118
-normal! zo
-127
-normal! zo
-136
-normal! zo
-146
-normal! zo
-160
-normal! zo
-152
-normal! zo
-159
+143
 normal! zo
 let s:l = 161 - ((35 * winheight(0) + 21) / 42)
 if s:l < 1 | let s:l = 1 | endif
@@ -400,6 +382,7 @@ set winwidth=1
 exe 'vert 1resize ' . ((&columns * 89 + 89) / 179)
 exe 'vert 2resize ' . ((&columns * 89 + 89) / 179)
 argglobal
+balt lc_openmp.c
 setlocal keymap=
 setlocal noarabic
 setlocal autoindent
@@ -977,10 +960,10 @@ exe 'vert 1resize ' . ((&columns * 115 + 89) / 179)
 exe 'vert 2resize ' . ((&columns * 63 + 89) / 179)
 tabnext 4
 set stal=1
+badd +1 ~/csci5451/assignment-1/lc_pthreads.c
 badd +1 ~/csci5451/assignment-1/lc_openmp.c
-badd +0 ~/csci5451/assignment-1/lc_pthreads.c
 badd +1 ~/csci5451/assignment-1/output/out1.txt
-badd +36 ~/csci5451/assignment-1/Makefile
+badd +6 ~/csci5451/assignment-1/Makefile
 badd +69 ~/csci5451/assignment-1/lc_serial.c
 badd +1 ~/csci5451/assignment-1/output/out2.txt
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0
