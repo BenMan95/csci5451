@@ -127,16 +127,6 @@ int main(int argc, char** argv)
             w[i] = wi_new;
         }
 
-        // Compute the new X*w vector
-        //for (int i = 0; i < num_points; i++) {
-        //    double total = 0;
-        //    double* row = points + i*dim_points;
-        //    for (int j = 0; j < dim_points; j++) {
-        //        total += row[j] * w[j];
-        //    }
-        //    Xw[i] = total;
-        //}
-
         // Compute and print out the loss
         double loss = 0;
         for (int i = 0; i < num_points; i++) {
@@ -154,7 +144,7 @@ int main(int argc, char** argv)
 
     printf("\nFinal weights:\n");
     for (int i = 0; i < dim_points; i++) {
-        printf("%lf\n", w[i]);
+        printf("%d: %lf\n", i, w[i]);
     }
 
     free(points);
