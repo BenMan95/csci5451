@@ -74,27 +74,21 @@ static void print_numbers(
  */
 int partition_inplace(int *data, int size)
 {
-    int pivot = data[0];
+    int pivot = data[size-1];
     int i = 0;
-    int j = size;
+    for (int j = 0; j < size; j++) {
+        if (data[j] < pivot) {
+            int temp;
+            temp = data[i];
+            data[i] = data[j];
+            data[j] = temp;
 
-    while (1) {
-        // Find elements to swap
-        while (data[++i] < pivot);
-        while (data[--j] > pivot);
-
-        // Exit once indices meet
-        if (i >= j) {
-            data[0] = data[j];
-            data[j] = pivot;
-            return j;
+            i++;
         }
-
-        // Swap elements
-        int temp = data[i];
-        data[i] = data[j];
-        data[j] = temp;
     }
+    data[size-1] = data[i];
+    data[i] = pivot;
+    return i;
 }
 
 /**

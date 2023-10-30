@@ -6,11 +6,8 @@ size = 1000000
 outfile = output.txt
 uoutfile = unsorted.txt
 
-zipped_files = lc_pthreads.c lc_openmp.c lc_serial.c \
-			   utils.c utils.h report.pdf Makefile \
-			   small_weights.txt MNIST_weights.txt
-
-cleaned_files = qs_mpi qs_serial *.txt
+zipped_files = qs_mpi.c qs_serial.c report.pdf Makefile
+cleaned_files = qs_mpi qs_serial
 
 all: qs_mpi
 
@@ -21,9 +18,18 @@ qs_mpi: qs_mpi.c
 run: qs_mpi
 	mpirun -np $(workers) ./qs_mpi $(size) $(outfile)
 
-# Time the program without writing output
+# Time the sorting algorithm without writing output
 time: qs_mpi
 	mpirun -np $(workers) ./qs_mpi $(size)
+
+time-all: qs_mpi
+	for s in 1000000 10000000 100000000; do \
+		echo Size: $$s; \
+		for w in 1 2 4 8 16; do \
+			echo Workers: $$w; \
+			make time workers=$$w size=$$s; \
+		done; \
+	done | grep -E 'Sort Time|Size|Workers'
 
 # Compare unsorted output with that of builtin `sort` command
 test: qs_mpi

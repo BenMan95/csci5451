@@ -74,37 +74,22 @@ static void print_numbers(
  */
 int partition_serial(int *data, int size)
 {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    if (rank == 0) {
-        printf("Partitioning: %d\n", size);
-        for (int i = 0; i < size; i++)
-            printf("%d: %d\n", i, data[i]);
-    }
-
-    int pivot = data[0];
+    // Lomuto's partitioning scheme
+    int pivot = data[size-1];
     int i = 0;
-    int j = size;
+    for (int j = 0; j < size; j++) {
+        if (data[j] < pivot) {
+            int temp;
+            temp = data[i];
+            data[i] = data[j];
+            data[j] = temp;
 
-    while (1) {
-        printf("%d %d\n", i, j);
-        // Find elements to swap
-        while (data[++i] < pivot);
-        while (data[--j] > pivot);
-
-        // Exit once indices meet
-        if (i >= j) {
-            data[0] = data[j];
-            data[j] = pivot;
-            return j;
+            i++;
         }
-
-        // Swap elements
-        int temp = data[i];
-        data[i] = data[j];
-        data[j] = temp;
     }
+    data[size-1] = data[i];
+    data[i] = pivot;
+    return i;
 }
 
 /**
@@ -122,7 +107,7 @@ void quicksort_serial(int *data, int size)
 }
 
 /**
- * @brief Gets the nth smallest element of an array
+ * @brief Returns the nth smallest element of an array
  *
  * @param data The array to read from
  * @param size The size of the array
@@ -130,31 +115,22 @@ void quicksort_serial(int *data, int size)
  */
 int quickselect(int *data, int size, int n)
 {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    if (rank == 0)
-        printf("Selecting: %d/%d\n", n, size);
-
     int p = partition_serial(data, size);
-
-    if (rank == 0)
-        printf("Partitioned: %d/%d, p:%d\n", n, size, p);
-
     if (n < p) return quickselect(data, p, n);
     if (n > p) return quickselect(data+p+1, size-p-1, n-p-1);
     return data[n];
-    }
+}
 
 /**
- * @brief Partitions an array in parallel and saves their positions
+ * @brief Partitions an array in parallel and saves their positions. After this
+ *        operation, each process in the group will contain the partitioned array
  *
  * @param data The array to partition
  * @param datasize The size of the array to partition
  * @param p1 Where to write the end index of the lower partition (non-inclusive)
  * @param p2 Where to write the start index of the upper partition (inclusive)
- * @param range_starts Array used for communication
- * @param range_sizes Array used for communication
+ * @param range_starts Array to use for communication
+ * @param range_sizes Array to use for communication
  * @param comm The communicator to use
  */
 void partition_parallel(
@@ -162,8 +138,6 @@ void partition_parallel(
         int *range_starts, int *range_sizes,
         MPI_Comm comm)
 {
-    int *buf;
-
     // Get rank and size
     int rank, size;
     MPI_Comm_rank(comm, &rank);
@@ -174,24 +148,21 @@ void partition_parallel(
     int range_end = datasize * (rank+1) / size;
     int range_size = range_end - range_start;
 
+    // Allocate buffer space
+    int bufsize = size > range_size ? size : range_size;
+    int* buf = (int*) malloc(bufsize * sizeof(int));
+
     // Get random ele from each process
     int pivot = data[range_start + rand()%range_size];
 
     // Get median of those eles to determine pivot
-    buf = (int*) malloc(size * sizeof(int));
     MPI_Allgather(
             &pivot, 1, MPI_INTEGER,
             buf, 1, MPI_INTEGER,
             comm);
-    //printf("Gathered, (%d/%d)\n", rank, size);
     pivot = quickselect(buf, size, size/2);
-    //printf("Selected, (%d/%d)\n", rank, size);
-    free(buf);
-
-    //printf("Pivot: %d, (%d/%d)\n", pivot, rank, size);
 
     // Partition the range
-    buf = (int*) malloc(range_size * sizeof(int));
     int j = 0;
     int k = range_size;
     for (int i = 0; i < range_size; i++) {
@@ -208,10 +179,10 @@ void partition_parallel(
             comm);
 
     // Determine positions of lower partitions
-    *p1 = 0;
+    int a = 0;
     for (int i = 0; i < size; i++) {
-        range_starts[i] = *p1;
-        *p1 += range_sizes[i];
+        range_starts[i] = a;
+        a += range_sizes[i];
     }
 
     // Gather lower partitions together
@@ -229,10 +200,10 @@ void partition_parallel(
             comm);
 
     // Determine positions of upper partitions
-    *p2 = datasize;
+    int b = datasize;
     for (int i = size-1; i >= 0; i--) {
-        *p2 -= range_sizes[i];
-        range_starts[i] = *p2;
+        b -= range_sizes[i];
+        range_starts[i] = b;
     }
 
     // Gather upper partitions together
@@ -242,12 +213,19 @@ void partition_parallel(
             comm);
 
     // Fill remaining data between the partitions
-    for (int i = *p1; i < *p2; i++)
+    for (int i = a; i < b; i++)
         data[i] = pivot;
+
+    // Assign outputs
+    *p1 = a;
+    *p2 = b;
+
+    free(buf);
 }
 
 /**
- * @brief Sorts an array using quicksort in parallel
+ * @brief Sorts an array using quicksort in parallel. After this operation, the
+ *        process with rank 0 in will contain the sorted array
  *
  * @param data The array to sort
  * @param datasize The size of the array
@@ -277,20 +255,37 @@ void quicksort_parallel(
             data, datasize, &p1, &p2,
             range_starts, range_sizes, comm);
 
-    //printf("partition: %d-%d, (%d/%d)\n", p1, p2, rank, size);
+    // If lower partition is empty, only sort upper partition
+    if (p1 == 0) {
+        quicksort_parallel(
+                data+p2, datasize-p2,
+                range_starts, range_sizes,
+                comm);
+        return;
+    }
 
-    // Determine how to split process group
+    // If upper partition is empty, only sort lower partition
+    if (p2 == datasize) {
+        quicksort_parallel(
+                data, p1,
+                range_starts, range_sizes,
+                comm);
+        return;
+    }
+
+    // Compute remaining unsorted elements and exit early if no unsorted elements remain
     int num_unsorted = datasize - p2 + p1;
-
     if (num_unsorted == 0)
         return;
 
+    // Determine how to split threads proportonally between the partitions
     int split = (size*p1 + num_unsorted/2) / num_unsorted;
+
+    // Ensure each group has at least one thread
     if (split < 1)
         split = 1;
     if (split >= size)
         split = size-1;
-    //int split = size/2;
 
     // Split the process group
     MPI_Comm newcomm;
@@ -315,7 +310,7 @@ void quicksort_parallel(
         // Second group sorts upper partition
         quicksort_parallel(
                 data+p2, datasize-p2,
-                range_starts, range_sizes,
+                range_starts+split, range_sizes+split,
                 newcomm);
 
         // First process of second group sends data
