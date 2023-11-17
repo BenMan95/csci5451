@@ -10,7 +10,7 @@
  * @param labels The array of labels.
  * @param nlabels How many labels to write.
  */
-static void print_labels(
+void print_labels(
     char const * const filename,
     unsigned const * const labels,
     size_t const nlabels);
@@ -21,7 +21,7 @@ static void print_labels(
  *
  * @param seconds Seconds spent sorting.
  */
-static void print_time25(
+void print_time25(
     double const seconds);
 
 /**
@@ -30,7 +30,41 @@ static void print_time25(
  *
  * @param seconds Seconds spent sorting.
  */
-static void print_time5(
+void print_time5(
     double const seconds);
+
+typedef struct {
+    int num_nodes, num_edges; // How many nodes and edges there are in the graph
+    int *counts; // How many neighbors each node has
+    int *offsets; // Offsets for each nodes neighbors
+                  // neighbors[offsets[i]+j] is the jth neighbor of node i
+    int *neighbors; // The underlying data array for neighbors
+} graph_t;
+
+/**
+ * @brief Load point data from a file
+ *
+ * @param file_name The name of the file to load data from
+ * @param graph The graph struct to load data into
+ */
+void load_graph(
+    char *file_name,
+    graph_t *graph);
+
+/**
+ * @brief Allocate the arrays of a graph according to its current num_nodes and num_edges values
+ *        Does not allocate the graph struct itself
+ *
+ * @param graph The graph whose data to free
+ */
+void alloc_graph(graph_t *graph);
+
+/**
+ * @brief Free the arrays of a graph
+ *        Does not free the graph struct itself
+ *
+ * @param graph The graph whose data to free
+ */
+void free_graph(graph_t *graph);
 
 #endif

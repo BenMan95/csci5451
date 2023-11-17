@@ -6,12 +6,28 @@
 
 int main(int argc, char** argv)
 {
-    int rank, size;
+  graph_t graph;
+  int *labels;
 
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+  int rank, size;
 
-    MPI_Finalize();
-    return 0;
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+  if (rank == 0) {
+    load_graph(argv[1], &graph);
+  }
+
+  MPI_Bcast(&graph.num_nodes, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&graph.num_edges, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  if (rank != 0) {
+    alloc_graph(&graph);
+  }
+
+  free_graph(&graph);
+
+  MPI_Finalize();
+  return 0;
 }
