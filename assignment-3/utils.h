@@ -37,8 +37,9 @@ typedef struct {
     int num_nodes, num_edges; // How many nodes and edges there are in the graph
     int *counts; // How many neighbors each node has
     int *offsets; // Offsets for each nodes neighbors
-                  // neighbors[offsets[i]+j] is the jth neighbor of node i
     int *neighbors; // The underlying data array for neighbors
+                    // neighbors[offsets[i]+j] is the jth neighbor of node i
+                    // If graph data was set by load_graph
 } graph_t;
 
 /**
