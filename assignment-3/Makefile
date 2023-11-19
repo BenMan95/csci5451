@@ -3,6 +3,7 @@ dataset = dataset
 
 # Arguments for testing
 input = 1000.txt
+output = output/labels.txt
 threads = 4
 
 zipped_files = lpa.c utils.c utils.h \
@@ -18,7 +19,7 @@ lpa: lpa.c utils.o
 
 # Rules for running programs
 run: lpa
-	mpirun -np $(threads) ./lpa $(dataset)/$(input)
+	mpirun -np $(threads) ./lpa $(dataset)/$(input) $(output)
 
 # Utility rules
 clean:

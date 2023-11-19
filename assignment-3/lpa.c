@@ -1,5 +1,5 @@
-// #include <stdio.h>
-// #include <stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <mpi.h>
 
 #include "utils.c"
@@ -11,6 +11,16 @@ int main(int argc, char** argv)
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // Exit if wrong number of arguments
+    if (argc != 3) {
+        if (rank == 0) {
+            printf("Usage: mpirun -np <workers> %s <graph> <labels>\n", argv[0]);
+        }
+
+        MPI_Finalize();
+        return 0;
+    }
 
     // STEP 1 --------------------------------------------------------------------
     // First process loads graph from file
@@ -96,6 +106,91 @@ int main(int argc, char** argv)
     // is the jth neighbor of the node i
 
     // STEPS 2-5 ---------------------------------------------------------------
+    // Seed random number generation
+    srand(rank+1);
+
+    // Initialize labels
+    unsigned int *labels = (unsigned int*) malloc(graph.num_nodes * sizeof(int));
+    for (int i = range_start; i < range_end; i++) {
+        labels[i] = i;
+    }
+
+    // Create array for counts
+    int *counts = (int*) malloc(graph.num_nodes * sizeof(int));
+
+    // Iterate until convergence
+    int converge = 0;
+    while (!converge) {
+        // Gather labels
+        MPI_Allgatherv(
+                MPI_IN_PLACE, range_size, MPI_INT,
+                labels, range_sizes, range_starts, MPI_INT,
+                MPI_COMM_WORLD);
+
+        // Recheck labels and check convergence
+        converge = 1;
+        for (int i = 0; i < range_size; i++) {
+            // First, initialize counts to zero
+            for (int j = 0; j < graph.num_nodes; j++) {
+                counts[j] = 0;
+            }
+
+            // Initialize count for current label to one
+            counts[labels[range_start+i]] = 1;
+
+            // Count instances of each label among neighbors
+            int best = 1;
+            for (int j = 0; j < graph.counts[i]; j++) {
+                int neighbor = graph.neighbors[graph.offsets[i]+j];
+                int label = labels[neighbor];
+                counts[label]++;
+
+                // Track highest count of same label
+                if (counts[label] > best) {
+                    best = counts[label];
+                }
+            }
+
+            // Count labels that have the highest count
+            int amtbest = 0;
+            for (int j = 0; j < graph.num_nodes; j++) {
+                if (counts[j] == best) {
+                    amtbest++;
+                }
+            }
+
+            // Randomly pick a label with the highest count
+            int n = rand() % amtbest;
+
+            // Find the nth label with that count
+            for (int j = 0; j < graph.num_nodes; j++) {
+                if (counts[j] == best) {
+                    if (n == 0) {
+                        // Set not converged if the label could have changed
+                        if (amtbest > 1 || labels[i+range_start] != j) {
+                            converge = 0;
+                        }
+
+                        // Set the new label
+                        labels[i+range_start] = labels[j];
+                        break;
+                    } else {
+                        n--;
+                    }
+                }
+            }
+        }
+
+        // Check if values have converged in all processes
+        MPI_Allreduce(
+            MPI_IN_PLACE, &converge, 1,
+            MPI_INT, MPI_LAND, MPI_COMM_WORLD);
+    }
+
+    // Output labels
+    if (rank == 0) {
+        print_labels(argv[2], labels, graph.num_nodes);
+    }
 
     // Clean up
     free_graph(&graph);
