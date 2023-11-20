@@ -53,14 +53,6 @@ void load_graph(
     graph_t *graph);
 
 /**
- * @brief Allocate the arrays of a graph according to its current num_nodes and num_edges values
- *        Does not allocate the graph struct itself
- *
- * @param graph The graph whose data to free
- */
-void alloc_graph(graph_t *graph);
-
-/**
  * @brief Free the arrays of a graph
  *        Does not free the graph struct itself
  *

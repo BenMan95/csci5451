@@ -25,14 +25,12 @@ void print_labels(
     fclose(fout);
 }
 
-void print_time25(
-        double const seconds)
+void print_time25( double const seconds)
 {
     printf("2-5 Time: %0.04fs\n", seconds);
 }
 
-void print_time5(
-        double const seconds)
+void print_time5( double const seconds)
 {
     printf("5 Time: %0.04fs\n", seconds);
 }
@@ -44,9 +42,18 @@ void load_graph(
     // Open file
     FILE *fh = fopen(file_name, "r");
 
-    // Read node and edge counts and allocate arrays
+    // Read node and edge counts
     fscanf(fh, "%d %d", &graph->num_nodes, &graph->num_edges);
-    alloc_graph(graph);
+
+    // Allocate graph arrays
+    graph->counts = (int*) malloc(graph->num_nodes * sizeof(int));
+    graph->offsets = (int*) malloc(graph->num_nodes * sizeof(int));
+    graph->neighbors = (int*) malloc(2 * graph->num_edges * sizeof(int));
+
+    // Initialize neighbor counts
+    for (int i = 0; i < graph->num_nodes; i++) {
+        graph->counts[i] = 0;
+    }
 
     // Load data from file
     int *data = (int*) malloc(2 * graph->num_edges * sizeof(int));
@@ -64,19 +71,20 @@ void load_graph(
         data[i*2+1] = b;
     }
 
-    // Set neighbor array locations
+    // Set neighbor array offsets
     int offset = 0;
     for (int i = 0; i < graph->num_nodes; i++) {
         graph->offsets[i] = offset;
         offset += graph->counts[i];
     }
 
+    // Create a temporary array for tracking current index in each subarray
     int *idx = (int*) malloc(graph->num_nodes * sizeof(int));
     for (int i = 0; i < graph->num_nodes; i++) {
         idx[i] = 0;
     }
 
-    // Load from temporary array to graph
+    // Load data from earlier array to graph
     for (int i = 0; i < graph->num_edges; i++) {
         int a = data[i*2];
         int b = data[i*2+1];
@@ -84,16 +92,10 @@ void load_graph(
         graph->neighbors[graph->offsets[b] + idx[b]++] = a;
     }
 
-    // Free temporary arrays
+    // Clean up
     free(idx);
     free(data);
-}
-
-void alloc_graph(graph_t *graph)
-{
-    graph->counts = (int*) malloc(graph->num_nodes * sizeof(int));
-    graph->offsets = (int*) malloc(graph->num_nodes * sizeof(int));
-    graph->neighbors = (int*) malloc(2 * graph->num_edges * sizeof(int));
+    fclose(fh);
 }
 
 void free_graph(graph_t *graph)
