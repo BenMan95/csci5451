@@ -26,7 +26,7 @@ run: lpa
 
 # Test code only checks to make sure all points which share an edge have the same label
 # Will not check to ensure that points which don't share an edge have different labels
-test: tester run
+test: tester
 	./tester $(inputdir)/$(input) $(outputdir)/$(output)
 
 # Utility rules

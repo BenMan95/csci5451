@@ -109,11 +109,18 @@ int main(int argc, char** argv)
     // neighbors of node i
 
     // STEPS 2-5 ---------------------------------------------------------------
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t0 = MPI_Wtime();
+
     // Initialize labels
     unsigned int *labels = (unsigned int*) malloc(graph.num_nodes * sizeof(int));
     for (int i = range_start; i < range_end; i++) {
         labels[i] = i;
     }
+
+    // STEP 5 ------------------------------------------------------------------
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t1 = MPI_Wtime();
 
     // Iterate until convergence
     int converge = 0;
@@ -152,8 +159,14 @@ int main(int argc, char** argv)
             MPI_INT, MPI_LAND, MPI_COMM_WORLD);
     }
 
-    // Output labels
+    // ALGORITHM FINISHED ------------------------------------------------------
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t2 = MPI_Wtime();
+
+    // Print time and labels
     if (rank == 0) {
+        print_time25(t2-t0);
+        print_time5(t2-t1);
         print_labels(argv[2], labels, graph.num_nodes);
     }
 
