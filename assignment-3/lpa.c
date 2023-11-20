@@ -16,9 +16,9 @@
 void split_by_nodes(graph_t *graph, int *range_starts, int *range_sizes, int n)
 {
     int next = 0;
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < n; i++) {
         range_starts[i] = next;
-        next = graph.num_nodes * (i+1) / size;
+        next = graph->num_nodes * (i+1) / n;
         range_sizes[i] = next - range_starts[i];
     }
 }
