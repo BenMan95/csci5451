@@ -62,11 +62,11 @@ int main(int argc, char** argv)
         int *displs = (int*) malloc(size * sizeof(int));
         for (int i = 0; i < size; i++) {
             sendcounts[i] = 0;
-            displs[i] = graph.offsets[range_starts[i]];
-
             for (int j = 0; j < range_sizes[i]; j++) {
                 sendcounts[i] += graph.counts[range_starts[i] + j];
             }
+
+            displs[i] = graph.offsets[range_starts[i]];
         }
 
         // Scatter edges
@@ -75,6 +75,7 @@ int main(int argc, char** argv)
                 MPI_IN_PLACE, sendcounts[0], MPI_INT,
                 0, MPI_COMM_WORLD);
 
+        // Clean up
         free(sendcounts);
         free(displs);
     } else { // Remaining processes recieve graph data
@@ -103,25 +104,21 @@ int main(int argc, char** argv)
 
     // After graph data is scattered,
     // neighbors[offsets[i-range_start]+j]
-    // is the jth neighbor of the node i
+    // is the jth neighbor of the node i and
+    // counts[i-range_start] is the number of
+    // neighbors of node i
 
     // STEPS 2-5 ---------------------------------------------------------------
-    // Seed random number generation
-    srand(rank+1);
-
     // Initialize labels
     unsigned int *labels = (unsigned int*) malloc(graph.num_nodes * sizeof(int));
     for (int i = range_start; i < range_end; i++) {
         labels[i] = i;
     }
 
-    // Create array for counts
-    int *counts = (int*) malloc(graph.num_nodes * sizeof(int));
-
     // Iterate until convergence
     int converge = 0;
     while (!converge) {
-        // Gather labels
+        // Gather labels from each process
         MPI_Allgatherv(
                 MPI_IN_PLACE, range_size, MPI_INT,
                 labels, range_sizes, range_starts, MPI_INT,
@@ -130,58 +127,26 @@ int main(int argc, char** argv)
         // Recheck labels and check convergence
         converge = 1;
         for (int i = 0; i < range_size; i++) {
-            // First, initialize counts to zero
-            for (int j = 0; j < graph.num_nodes; j++) {
-                counts[j] = 0;
-            }
+            int cur_label = labels[range_start+i];
 
-            // Initialize count for current label to one
-            counts[labels[range_start+i]] = 1;
-
-            // Count instances of each label among neighbors
-            int best = 1;
+            // Find the highest label among self and neighbors
+            int max_label = cur_label;
             for (int j = 0; j < graph.counts[i]; j++) {
                 int neighbor = graph.neighbors[graph.offsets[i]+j];
                 int label = labels[neighbor];
-                counts[label]++;
-
-                // Track highest count of same label
-                if (counts[label] > best) {
-                    best = counts[label];
+                if (label > max_label) {
+                    max_label = label;
                 }
             }
 
-            // Count labels that have the highest count
-            int amtbest = 0;
-            for (int j = 0; j < graph.num_nodes; j++) {
-                if (counts[j] == best) {
-                    amtbest++;
-                }
-            }
-
-            // Randomly pick a label with the highest count
-            int n = rand() % amtbest;
-
-            // Find the nth label with that count
-            for (int j = 0; j < graph.num_nodes; j++) {
-                if (counts[j] == best) {
-                    if (n == 0) {
-                        // Set not converged if the label could have changed
-                        if (amtbest > 1 || labels[i+range_start] != j) {
-                            converge = 0;
-                        }
-
-                        // Set the new label
-                        labels[i+range_start] = labels[j];
-                        break;
-                    } else {
-                        n--;
-                    }
-                }
+            // Set new label and check convergence
+            if (max_label != cur_label) {
+                labels[range_start+i] = max_label;
+                converge = 0;
             }
         }
 
-        // Check if values have converged in all processes
+        // Check convergence on all processes
         MPI_Allreduce(
             MPI_IN_PLACE, &converge, 1,
             MPI_INT, MPI_LAND, MPI_COMM_WORLD);
