@@ -327,9 +327,9 @@ split_by_edges(&graph, range_starts, range_sizes, size);
     }
 
     // Initialize labels
-    int *labels = (int*) malloc(graph.num_nodes * sizeof(int));
-    for (int i = range_start; i < range_end; i++) {
-        labels[i] = i;
+    int *labels = (int*) malloc(range_size * sizeof(int));
+    for (int i = 0; i < range_size; i++) {
+        labels[i] = range_start + i;
     }
 
     // STEP 5 ------------------------------------------------------------------
@@ -342,30 +342,39 @@ split_by_edges(&graph, range_starts, range_sizes, size);
         
         // Load labels to send buffer
         for (int i = 0; i < send_data.num_labels; i++) {
-            send_data.labels[i] = labels[send_data.nodes[i]];
+            send_data.labels[i] = labels[send_data.nodes[i] - range_start];
         }
 
         // Exchange labels between processes
         MPI_Alltoallv(
             send_data.labels, send_data.counts, send_data.displs, MPI_INT,
-                recv_data.labels, recv_data.counts, recv_data.displs, MPI_INT,
-                MPI_COMM_WORLD);
-
-// Read labels from recieve buffer
-        for (int i = 0; i < recv_data.num_labels; i++) {
-            labels[recv_data.nodes[i]] = recv_data.labels[i];
-        }
+            recv_data.labels, recv_data.counts, recv_data.displs, MPI_INT,
+            MPI_COMM_WORLD);
 
         // Recheck labels and check convergence
         converge = 1;
         for (int i = 0; i < range_size; i++) {
-            int cur_label = labels[range_start+i];
+            int cur_label = labels[i];
 
             // Find the highest label among self and edges
+            int k = 0;
             int min_label = cur_label;
             for (int j = 0; j < graph.counts[i]; j++) {
                 int edge = graph.edges[graph.offsets[i]+j];
-                int label = labels[edge];
+
+                // Get label
+                int label;
+                if (edge < range_start || edge >= range_start+range_size) {
+                    // Read from recieved labels if not in range
+                    // We can use a process similar to merge sort to find the edge
+                    while (recv_data.nodes[k] < edge)
+                        k++;
+                    label = recv_data.labels[k];
+                } else {
+                    // Else read from local labels
+                    label = labels[edge - range_start];
+                }
+
                 if (label < min_label) {
                     min_label = label;
                 }
@@ -373,7 +382,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
 
             // Set new label and check convergence
             if (min_label != cur_label) {
-                labels[range_start+i] = min_label;
+                labels[i] = min_label;
                 converge = 0;
             }
         }
@@ -384,10 +393,15 @@ split_by_edges(&graph, range_starts, range_sizes, size);
             MPI_INT, MPI_LAND, MPI_COMM_WORLD);
     }
 
-// Gather all labels at first process
+    // Gather all labels at first process
+    int* all_labels = NULL;
+    if (rank == 0) {
+        all_labels = (int*) malloc(graph.num_nodes * sizeof(int));
+    }
+
     MPI_Gatherv(
-        &labels[range_start], range_size, MPI_INT,
-        labels, range_sizes, range_starts, MPI_INT,
+        labels, range_size, MPI_INT,
+        all_labels, range_sizes, range_starts, MPI_INT,
         0, MPI_COMM_WORLD);
 
     // ALGORITHM FINISHED ------------------------------------------------------
@@ -398,7 +412,8 @@ split_by_edges(&graph, range_starts, range_sizes, size);
     if (rank == 0) {
         print_time25(t2-t0);
         print_time5(t2-t1);
-        print_labels(argv[2], (unsigned int*) labels, graph.num_nodes);
+        print_labels(argv[2], (unsigned int*) all_labels, graph.num_nodes);
+        free(all_labels);
     }
 
     // Free graph data arrays
