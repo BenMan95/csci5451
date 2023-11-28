@@ -48,7 +48,7 @@ void load_graph(
     // Allocate graph arrays
     graph->counts = (int*) malloc(graph->num_nodes * sizeof(int));
     graph->offsets = (int*) malloc(graph->num_nodes * sizeof(int));
-    graph->neighbors = (int*) malloc(2 * graph->num_edges * sizeof(int));
+    graph->neighbors = (int*) malloc(graph->num_edges * sizeof(int));
 
     // Initialize neighbor counts
     for (int i = 0; i < graph->num_nodes; i++) {
@@ -64,9 +64,8 @@ void load_graph(
 
         // Increment neighbor counts
         graph->counts[a]++;
-        graph->counts[b]++;
 
-        // Add data to array
+        // Add data to temporary array
         data[i*2] = a;
         data[i*2+1] = b;
     }
@@ -89,7 +88,6 @@ void load_graph(
         int a = data[i*2];
         int b = data[i*2+1];
         graph->neighbors[graph->offsets[a] + idx[a]++] = b;
-        graph->neighbors[graph->offsets[b] + idx[b]++] = a;
     }
 
     // Clean up

@@ -41,7 +41,7 @@ void split_by_neighbors(graph_t *graph, int *range_starts, int *range_sizes, int
     // Then, iterate over the subarray while adding the neighber counts up
     // When the sum is close enough to the target, create a new subarray
 
-    double target = 2 * graph->num_edges / n;
+    double target = graph->num_edges / n;
     double cur_sum = 0;
     double cur_diff = target;
 
