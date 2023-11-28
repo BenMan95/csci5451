@@ -123,8 +123,8 @@ int main(int argc, char** argv)
 
     // First process determines what range each process will work on
     if (rank == 0) {
-                // split_by_nodes(&graph, range_starts, range_sizes, size);
-split_by_edges(&graph, range_starts, range_sizes, size);
+        // split_by_nodes(&graph, range_starts, range_sizes, size);
+        split_by_edges(&graph, range_starts, range_sizes, size);
     }
 
     // Ranges are broadcasted to other processes
@@ -220,7 +220,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
         int *displs;
     } recv_data;
 
-// Assign arrays for counts and displacements
+    // Assign arrays for counts and displacements
     send_data.counts = (int*) malloc(size * sizeof(int));
     send_data.displs = (int*) malloc(size * sizeof(int));
     recv_data.counts = (int*) malloc(size * sizeof(int));
@@ -327,10 +327,15 @@ split_by_edges(&graph, range_starts, range_sizes, size);
     }
 
     // Initialize labels
-    int *labels = (int*) malloc(range_size * sizeof(int));
+    int *local_labels = (int*) malloc(range_size * sizeof(int));
     for (int i = 0; i < range_size; i++) {
-        labels[i] = range_start + i;
+        local_labels[i] = range_start + i;
     }
+
+    // Free temporary arrays
+    free(ranks);
+    free(temp1);
+    free(temp2);
 
     // STEP 5 ------------------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
@@ -342,7 +347,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
         
         // Load labels to send buffer
         for (int i = 0; i < send_data.num_labels; i++) {
-            send_data.labels[i] = labels[send_data.nodes[i] - range_start];
+            send_data.labels[i] = local_labels[send_data.nodes[i] - range_start];
         }
 
         // Exchange labels between processes
@@ -354,7 +359,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
         // Recheck labels and check convergence
         converge = 1;
         for (int i = 0; i < range_size; i++) {
-            int cur_label = labels[i];
+            int cur_label = local_labels[i];
 
             // Find the highest label among self and edges
             int k = 0;
@@ -372,7 +377,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
                     label = recv_data.labels[k];
                 } else {
                     // Else read from local labels
-                    label = labels[edge - range_start];
+                    label = local_labels[edge - range_start];
                 }
 
                 if (label < min_label) {
@@ -382,7 +387,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
 
             // Set new label and check convergence
             if (min_label != cur_label) {
-                labels[i] = min_label;
+                local_labels[i] = min_label;
                 converge = 0;
             }
         }
@@ -394,14 +399,14 @@ split_by_edges(&graph, range_starts, range_sizes, size);
     }
 
     // Gather all labels at first process
-    int* all_labels = NULL;
+    int* labels = NULL;
     if (rank == 0) {
-        all_labels = (int*) malloc(graph.num_nodes * sizeof(int));
+        labels = (int*) malloc(graph.num_nodes * sizeof(int));
     }
 
     MPI_Gatherv(
-        labels, range_size, MPI_INT,
-        all_labels, range_sizes, range_starts, MPI_INT,
+        local_labels, range_size, MPI_INT,
+        labels, range_sizes, range_starts, MPI_INT,
         0, MPI_COMM_WORLD);
 
     // ALGORITHM FINISHED ------------------------------------------------------
@@ -412,8 +417,8 @@ split_by_edges(&graph, range_starts, range_sizes, size);
     if (rank == 0) {
         print_time25(t2-t0);
         print_time5(t2-t1);
-        print_labels(argv[2], (unsigned int*) all_labels, graph.num_nodes);
-        free(all_labels);
+        print_labels(argv[2], (unsigned int*) labels, graph.num_nodes);
+        free(labels);
     }
 
     // Free graph data arrays
@@ -438,10 +443,7 @@ split_by_edges(&graph, range_starts, range_sizes, size);
     free(range_starts);
 
     // Free other arrays
-    free(ranks);
-    free(temp1);
-    free(temp2);
-    free(labels);
+    free(local_labels);
 
     MPI_Finalize();
     return 0;
