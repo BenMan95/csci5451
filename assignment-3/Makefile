@@ -24,6 +24,28 @@ tester: tester.c
 run: lpa
 	mpirun -np $(procs) ./lpa $(inputdir)/$(input) $(outputdir)/$(output)
 
+time-all:
+	make run input=1000.txt procs=1
+	make run input=1000.txt procs=2
+	make run input=1000.txt procs=4
+	make run input=1000.txt procs=8
+	make run input=1000.txt procs=16
+	make run input=10000.txt procs=1
+	make run input=10000.txt procs=2
+	make run input=10000.txt procs=4
+	make run input=10000.txt procs=8
+	make run input=10000.txt procs=16
+	make run input=100000.txt procs=1
+	make run input=100000.txt procs=2
+	make run input=100000.txt procs=4
+	make run input=100000.txt procs=8
+	make run input=100000.txt procs=16
+	make run input=1000000.txt procs=1
+	make run input=1000000.txt procs=2
+	make run input=1000000.txt procs=4
+	make run input=1000000.txt procs=8
+	make run input=1000000.txt procs=16
+
 # Test code only checks to make sure all points which share an edge have the same label
 # Will not check to ensure that points which don't share an edge have different labels
 test: tester

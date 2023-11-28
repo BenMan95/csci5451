@@ -88,6 +88,27 @@ void split_by_edges(graph_t *graph, int *range_starts, int *range_sizes, int n)
     }
 }
 
+/**
+ * @brief Searches a sorted array using binary search
+ * 
+ * @param arr The array to search
+ * @param n The size of the array
+ * @param x The element to search for
+ * 
+ * @return Returns the index if found, -1 otherwise
+ */
+int binary_search(int *arr, int n, int x)
+{
+    if (n <= 0) return -1;
+
+    int k = n / 2;
+    int mid = arr[k];
+
+    if (x < mid) return binary_search(arr, k, x);
+    if (x > mid) return binary_search(arr+k+1, n-k-1, x) + k + 1;
+    return k;
+}
+
 int main(int argc, char** argv)
 {
     int rank, size;
@@ -344,7 +365,6 @@ int main(int argc, char** argv)
     // Iterate until convergence
     int converge = 0;
     while (!converge) {
-        
         // Load labels to send buffer
         for (int i = 0; i < send_data.num_labels; i++) {
             send_data.labels[i] = local_labels[send_data.nodes[i] - range_start];
@@ -362,7 +382,6 @@ int main(int argc, char** argv)
             int cur_label = local_labels[i];
 
             // Find the highest label among self and edges
-            int k = 0;
             int min_label = cur_label;
             for (int j = 0; j < graph.counts[i]; j++) {
                 int edge = graph.edges[graph.offsets[i]+j];
@@ -371,9 +390,7 @@ int main(int argc, char** argv)
                 int label;
                 if (edge < range_start || edge >= range_start+range_size) {
                     // Read from recieved labels if not in range
-                    // We can use a process similar to merge sort to find the edge
-                    while (recv_data.nodes[k] < edge)
-                        k++;
+                    int k = binary_search(recv_data.nodes, recv_data.num_labels, edge);
                     label = recv_data.labels[k];
                 } else {
                     // Else read from local labels
