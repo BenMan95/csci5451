@@ -48,9 +48,9 @@ void load_graph(
     // Allocate graph arrays
     graph->counts = (int*) malloc(graph->num_nodes * sizeof(int));
     graph->offsets = (int*) malloc(graph->num_nodes * sizeof(int));
-    graph->neighbors = (int*) malloc(graph->num_edges * sizeof(int));
+    graph->edges = (int*) malloc(graph->num_edges * sizeof(int));
 
-    // Initialize neighbor counts
+    // Initialize edges counts
     for (int i = 0; i < graph->num_nodes; i++) {
         graph->counts[i] = 0;
     }
@@ -62,7 +62,7 @@ void load_graph(
         int a, b;
         fscanf(fh, "%d %d", &a, &b);
 
-        // Increment neighbor counts
+        // Increment edge count
         graph->counts[a]++;
 
         // Add data to temporary array
@@ -70,7 +70,7 @@ void load_graph(
         data[i*2+1] = b;
     }
 
-    // Set neighbor array offsets
+    // Set edge array offsets
     int offset = 0;
     for (int i = 0; i < graph->num_nodes; i++) {
         graph->offsets[i] = offset;
@@ -78,27 +78,20 @@ void load_graph(
     }
 
     // Create a temporary array for tracking current index in each subarray
-    int *idx = (int*) malloc(graph->num_nodes * sizeof(int));
+    int *indices = (int*) malloc(graph->num_nodes * sizeof(int));
     for (int i = 0; i < graph->num_nodes; i++) {
-        idx[i] = 0;
+        indices[i] = 0;
     }
 
     // Load data from earlier array to graph
     for (int i = 0; i < graph->num_edges; i++) {
         int a = data[i*2];
         int b = data[i*2+1];
-        graph->neighbors[graph->offsets[a] + idx[a]++] = b;
+        graph->edges[graph->offsets[a] + indices[a]++] = b;
     }
 
     // Clean up
-    free(idx);
+    free(indices);
     free(data);
     fclose(fh);
-}
-
-void free_graph(graph_t *graph)
-{
-    free(graph->counts);
-    free(graph->offsets);
-    free(graph->neighbors);
 }

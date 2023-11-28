@@ -24,9 +24,9 @@ void split_by_nodes(graph_t *graph, int *range_starts, int *range_sizes, int n)
 }
 
 /**
- * @brief Splits the nodes of a graph into n ranges by their neighbor counts
+ * @brief Splits the nodes of a graph into n ranges by their edge counts
  *        Rather than splitting so that each range has the same amount of nodes,
- *        This splits the graph so that the total number of neighbors of its nodes
+ *        This splits the graph so that the total number of edges of its nodes
  *        is approximately the same
  *
  * @param graph The graph to split
@@ -34,10 +34,10 @@ void split_by_nodes(graph_t *graph, int *range_starts, int *range_sizes, int n)
  * @param range_sizes Where to write the sizes of the ranges
  * @param n The number of ranges to create
  */
-void split_by_neighbors(graph_t *graph, int *range_starts, int *range_sizes, int n)
+void split_by_edges(graph_t *graph, int *range_starts, int *range_sizes, int n)
 {
-    // First, the target neighbor count per range is computed
-    // as twice the number of edges divided by the number of ranges
+    // First, the target edge count per range is computed as
+    // the number of edges (both directions) divided by the number of ranges
     // Then, iterate over the subarray while adding the neighber counts up
     // When the sum is close enough to the target, create a new subarray
 
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
         load_graph(argv[1], &graph);
     }
 
-    // Graph size is distributed among other processes
+    // Graph size is broadcasted to other processes
     MPI_Bcast(&graph.num_nodes, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&graph.num_edges, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -123,8 +123,8 @@ int main(int argc, char** argv)
 
     // First process determines what range each process will work on
     if (rank == 0) {
-        split_by_neighbors(&graph, range_starts, range_sizes, size);
-        // split_by_nodes(&graph, range_starts, range_sizes, size);
+                // split_by_nodes(&graph, range_starts, range_sizes, size);
+split_by_edges(&graph, range_starts, range_sizes, size);
     }
 
     // Ranges are broadcasted to other processes
@@ -137,7 +137,7 @@ int main(int argc, char** argv)
     int range_end = range_start + range_size;
 
     if (rank == 0) { // First process scatters graph data
-        // Scatter neighbor counts
+        // Scatter edge counts
         MPI_Scatterv(
                 graph.counts, range_sizes, range_starts, MPI_INT,
                 MPI_IN_PLACE, range_size, MPI_INT,
@@ -157,7 +157,7 @@ int main(int argc, char** argv)
 
         // Scatter edges
         MPI_Scatterv(
-                graph.neighbors, sendcounts, displs, MPI_INT,
+                graph.edges, sendcounts, displs, MPI_INT,
                 MPI_IN_PLACE, sendcounts[0], MPI_INT,
                 0, MPI_COMM_WORLD);
 
@@ -165,7 +165,7 @@ int main(int argc, char** argv)
         free(sendcounts);
         free(displs);
     } else { // Remaining processes recieve graph data
-        // Recieve neighbor counts
+        // Recieve edge counts
         graph.counts = (int*) malloc(range_size * sizeof(int));
         MPI_Scatterv(
                 NULL, NULL, NULL, MPI_INT,
@@ -181,23 +181,153 @@ int main(int argc, char** argv)
         }
 
         // Recieve edges
-        graph.neighbors = (int*) malloc(count * sizeof(int));
+        graph.edges = (int*) malloc(count * sizeof(int));
         MPI_Scatterv(
                 NULL, NULL, NULL, MPI_INT,
-                graph.neighbors, count, MPI_INT,
+                graph.edges, count, MPI_INT,
                 0, MPI_COMM_WORLD);
     }
 
     // After graph data is scattered,
-    // counts[i-range_start] is the number of neighbors of node i
-    // neighbors[offsets[i-range_start]+j] is the jth neighbor of the node i
+    // counts[i-range_start] is the number of edges of node i
+    // edges[offsets[i-range_start]+j] is the jth edge of the node i
 
     // STEPS 2-5 ---------------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
 
+    // ranks[i] will be the rank of the process handling node i
+    int *ranks = (int*) malloc(graph.num_nodes * sizeof(int));
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < range_sizes[i]; j++) {
+            ranks[range_starts[i]+j] = i;
+        }
+    }
+
+    struct {
+        int num_labels = 0;
+        int *nodes; // The node that each label is for
+        int *labels; // Array for labels to send
+        int *counts;
+        int *displs;
+    } send_data;
+
+    struct {
+        int num_labels = 0; // The number of labels to recieve
+        int *nodes; // The node that each label is for
+        int *labels; // Array for labels to recieve
+        int *counts;
+        int *displs;
+    } recv_data;
+
+// Assign arrays for counts and displacements
+    send_data.counts = (int*) malloc(size * sizeof(int));
+    send_data.displs = (int*) malloc(size * sizeof(int));
+    recv_data.counts = (int*) malloc(size * sizeof(int));
+    recv_data.displs = (int*) malloc(size * sizeof(int));
+
+    // Initialize those arrays
+    for (int i = 0; i < size; i++) {
+        send_data.counts[i] = 0;
+        send_data.displs[i] = 0;
+        recv_data.counts[i] = 0;
+        recv_data.displs[i] = 0;
+    }
+
+    // Initialize labels array
+    // Not used for labels yet, just used now to avoid needing to allocate extra space
+    int *temp1 = (int*) malloc(graph.num_nodes * sizeof(int));
+    for (int i = 0; i < graph.num_nodes; i++) {
+        temp1[i] = 0;
+    }
+
+    // First pass over edges array
+    int *temp2 = (int*) malloc(size * sizeof(int)); // Used to check which processes are already being sent this node
+    for (int i = 0; i < range_size; i++) {
+        for (int j = 0; j < size; j++) {
+            temp2[j] = 0;
+        }
+
+        for (int j = 0; j < graph.counts[i]; j++) {
+            int edge = graph.edges[graph.offsets[i]+j];
+            int edge_rank = ranks[edge];
+
+            // Skip edges handled by the same process
+            if (rank == edge_rank) {
+                continue;
+            }
+
+            // Count the edges that will need to be sent to other processes
+            if (temp2[edge_rank] == 0) {
+                temp2[edge_rank] = 1;
+                send_data.num_labels++;
+                send_data.counts[edge_rank]++;
+            }
+
+            // Determine what edges will need to be recieved
+            if (temp1[edge] == 0) {
+                temp1[edge] = 1;
+                recv_data.num_labels++;
+            }
+        }
+    }
+
+    // Assign memory space
+    send_data.nodes = (int*) malloc(send_data.num_labels * sizeof(int));
+    send_data.labels = (int*) malloc(send_data.num_labels * sizeof(int));
+    recv_data.nodes = (int*) malloc(recv_data.num_labels * sizeof(int));
+    recv_data.labels = (int*) malloc(recv_data.num_labels * sizeof(int));
+
+    int idx = 0;
+    int *indices = (int*) malloc(size * sizeof(int)); // Current position in each subarray
+    for (int i = 0; i < size; i++) {
+        // Compute displacements
+        send_data.displs[i] = idx;
+        idx += send_data.counts[i];
+
+        // Initialize indices
+        indices[i] = 0;
+    }
+
+    // Determine what labels will need to be sent to each process
+    for (int i = 0; i < range_size; i++) {
+        for (int j = 0; j < size; j++) {
+            temp2[j] = 0;
+        }
+
+        for (int j = 0; j < graph.counts[i]; j++) {
+            int edge = graph.edges[graph.offsets[i]+j];
+            int edge_rank = ranks[edge];
+
+            // Skip edges handled by the same process
+            if (rank == edge_rank) {
+                continue;
+            }
+
+            // Add edge to send data
+            if (temp2[edge_rank] == 0) {
+                temp2[edge_rank] = 1;
+                int k = indices[edge_rank]++;
+                send_data.nodes[send_data.displs[edge_rank]+k] = range_start+i;
+            }
+        }
+    }
+
+    // Determine what labels will need to be recieved from each process
+    idx = 0;
+    for (int i = 0; i < size; i++) {
+        recv_data.displs[i] = idx;
+        for (int j = 0; j < range_sizes[i]; j++) {
+            int node = range_starts[i] + j;
+            if (temp1[node]) {
+                recv_data.nodes[idx++] = node;
+                recv_data.counts[i]++;
+            }
+        }
+    }
+
     // Initialize labels
-    unsigned int *labels = (unsigned int*) malloc(graph.num_nodes * sizeof(int));
+    int *labels = (int*) malloc(graph.num_nodes * sizeof(int));
     for (int i = range_start; i < range_end; i++) {
         labels[i] = i;
     }
@@ -209,30 +339,41 @@ int main(int argc, char** argv)
     // Iterate until convergence
     int converge = 0;
     while (!converge) {
-        // Gather labels from each process
-        MPI_Allgatherv(
-                MPI_IN_PLACE, range_size, MPI_INT,
-                labels, range_sizes, range_starts, MPI_INT,
+        
+        // Load labels to send buffer
+        for (int i = 0; i < send_data.num_labels; i++) {
+            send_data.labels[i] = labels[send_data.nodes[i]];
+        }
+
+        // Exchange labels between processes
+        MPI_Alltoallv(
+            send_data.labels, send_data.counts, send_data.displs, MPI_INT,
+                recv_data.labels, recv_data.counts, recv_data.displs, MPI_INT,
                 MPI_COMM_WORLD);
+
+// Read labels from recieve buffer
+        for (int i = 0; i < recv_data.num_labels; i++) {
+            labels[recv_data.nodes[i]] = recv_data.labels[i];
+        }
 
         // Recheck labels and check convergence
         converge = 1;
         for (int i = 0; i < range_size; i++) {
             int cur_label = labels[range_start+i];
 
-            // Find the highest label among self and neighbors
-            int max_label = cur_label;
+            // Find the highest label among self and edges
+            int min_label = cur_label;
             for (int j = 0; j < graph.counts[i]; j++) {
-                int neighbor = graph.neighbors[graph.offsets[i]+j];
-                int label = labels[neighbor];
-                if (label > max_label) {
-                    max_label = label;
+                int edge = graph.edges[graph.offsets[i]+j];
+                int label = labels[edge];
+                if (label < min_label) {
+                    min_label = label;
                 }
             }
 
             // Set new label and check convergence
-            if (max_label != cur_label) {
-                labels[range_start+i] = max_label;
+            if (min_label != cur_label) {
+                labels[range_start+i] = min_label;
                 converge = 0;
             }
         }
@@ -243,6 +384,12 @@ int main(int argc, char** argv)
             MPI_INT, MPI_LAND, MPI_COMM_WORLD);
     }
 
+// Gather all labels at first process
+    MPI_Gatherv(
+        &labels[range_start], range_size, MPI_INT,
+        labels, range_sizes, range_starts, MPI_INT,
+        0, MPI_COMM_WORLD);
+
     // ALGORITHM FINISHED ------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
     double t2 = MPI_Wtime();
@@ -251,13 +398,36 @@ int main(int argc, char** argv)
     if (rank == 0) {
         print_time25(t2-t0);
         print_time5(t2-t1);
-        print_labels(argv[2], labels, graph.num_nodes);
+        print_labels(argv[2], (unsigned int*) labels, graph.num_nodes);
     }
 
-    // Clean up
-    free_graph(&graph);
+    // Free graph data arrays
+    free(graph.counts);
+    free(graph.offsets);
+    free(graph.edges);
+
+    // Free send data arrays
+    free(send_data.nodes);
+    free(send_data.labels);
+    free(send_data.counts);
+    free(send_data.displs);
+
+    // Free recieve data arrays
+    free(recv_data.nodes);
+    free(recv_data.labels);
+    free(recv_data.counts);
+    free(recv_data.displs);
+
+    // Free ranges
     free(range_sizes);
     free(range_starts);
+
+    // Free other arrays
+    free(ranks);
+    free(temp1);
+    free(temp2);
+    free(labels);
+
     MPI_Finalize();
     return 0;
 }

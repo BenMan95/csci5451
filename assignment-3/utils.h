@@ -35,15 +35,16 @@ void print_time5(
 
 typedef struct {
     int num_nodes, num_edges; // How many nodes and edges there are in the graph
-    int *counts; // How many neighbors each node has
-    int *offsets; // Offsets for each nodes neighbors
-    int *neighbors; // The underlying data array for neighbors
-                    // neighbors[offsets[i]+j] is the jth neighbor of node i
+                              // Note: Each edge is counted twice, once for each direction
+    int *counts; // How many edges each node has
+    int *offsets; // Offsets for each node's edges
+    int *edges; // The underlying data array for edges
+                    // edges[offsets[i]+j] is the jth edge of node i
                     // If graph data was set by load_graph
 } graph_t;
 
 /**
- * @brief Load point data from a file
+ * @brief Load point data from a file. This assumes the file contains points in both directions.
  *
  * @param file_name The name of the file to load data from
  * @param graph The graph struct to load data into
