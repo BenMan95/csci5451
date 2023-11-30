@@ -129,14 +129,14 @@ int main(int argc, char** argv)
 
     // STEP 1 --------------------------------------------------------------------
     // First process loads graph from file
-    graph_t graph;
+    graph_t full_graph;
     if (rank == 0) {
-        load_graph(argv[1], &graph);
+        load_graph(argv[1], &full_graph);
     }
 
     // Graph size is broadcasted to other processes
-    MPI_Bcast(&graph.num_nodes, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&graph.num_edges, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&full_graph.num_nodes, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&full_graph.num_edges, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Allocate space for ranges
     int *range_starts = (int*) malloc(size * sizeof(int));
@@ -144,8 +144,8 @@ int main(int argc, char** argv)
 
     // First process determines what range each process will work on
     if (rank == 0) {
-        // split_by_nodes(&graph, range_starts, range_sizes, size);
-        split_by_edges(&graph, range_starts, range_sizes, size);
+        // split_by_nodes(&full_graph, range_starts, range_sizes, size);
+        split_by_edges(&full_graph, range_starts, range_sizes, size);
     }
 
     // Ranges are broadcasted to other processes
@@ -157,68 +157,63 @@ int main(int argc, char** argv)
     int range_size = range_sizes[rank];
     int range_end = range_start + range_size;
 
-    if (rank == 0) { // First process scatters graph data
-        // Scatter edge counts
-        MPI_Scatterv(
-                graph.counts, range_sizes, range_starts, MPI_INT,
-                MPI_IN_PLACE, range_size, MPI_INT,
-                0, MPI_COMM_WORLD);
+    graph_t local_graph = {.num_nodes = range_size, .num_edges = 0};
 
-        // Determine what edges to send to each process
-        int *sendcounts = (int*) malloc(size * sizeof(int));
-        int *displs = (int*) malloc(size * sizeof(int));
+    // Scatter edge counts
+    local_graph.counts = (int*) malloc(range_size * sizeof(int));
+    MPI_Scatterv(
+        full_graph.counts, range_sizes, range_starts, MPI_INT,
+        local_graph.counts, range_size, MPI_INT,
+        0, MPI_COMM_WORLD);
+
+    // Each process computes offsets and number of edges to recieve
+    local_graph.offsets = (int*) malloc(range_size * sizeof(int));
+    for (int i = 0; i < range_size; i++) {
+        local_graph.offsets[i] = local_graph.num_edges;
+        local_graph.num_edges += local_graph.counts[i];
+    }
+
+    // First process also determines what edges to send to each process
+    int *sendcounts;
+    int *displs;
+    if (rank == 0) {
+        sendcounts = (int*) malloc(size * sizeof(int));
+        displs = (int*) malloc(size * sizeof(int));
         for (int i = 0; i < size; i++) {
             sendcounts[i] = 0;
             for (int j = 0; j < range_sizes[i]; j++) {
-                sendcounts[i] += graph.counts[range_starts[i] + j];
+                sendcounts[i] += full_graph.counts[range_starts[i]+j];
             }
-
-            displs[i] = graph.offsets[range_starts[i]];
+            displs[i] = full_graph.offsets[range_starts[i]];
         }
-
-        // Scatter edges
-        MPI_Scatterv(
-                graph.edges, sendcounts, displs, MPI_INT,
-                MPI_IN_PLACE, sendcounts[0], MPI_INT,
-                0, MPI_COMM_WORLD);
-
-        // Clean up
-        free(sendcounts);
-        free(displs);
-    } else { // Remaining processes recieve graph data
-        // Recieve edge counts
-        graph.counts = (int*) malloc(range_size * sizeof(int));
-        MPI_Scatterv(
-                NULL, NULL, NULL, MPI_INT,
-                graph.counts, range_size, MPI_INT,
-                0, MPI_COMM_WORLD);
-
-        // Compute offsets and number of edges to recieve
-        graph.offsets = (int*) malloc(range_size * sizeof(int));
-        int count = 0;
-        for (int i = 0; i < range_size; i++) {
-            graph.offsets[i] = count;
-            count += graph.counts[i];
-        }
-
-        // Recieve edges
-        graph.edges = (int*) malloc(count * sizeof(int));
-        MPI_Scatterv(
-                NULL, NULL, NULL, MPI_INT,
-                graph.edges, count, MPI_INT,
-                0, MPI_COMM_WORLD);
     }
 
-    // After graph data is scattered,
-    // counts[i-range_start] is the number of edges of node i
-    // edges[offsets[i-range_start]+j] is the jth edge of the node i
+    // Scatter edges
+    local_graph.edges = (int*) malloc(local_graph.num_edges * sizeof(int));
+    MPI_Scatterv(
+        full_graph.edges, sendcounts, displs, MPI_INT,
+        local_graph.edges, local_graph.num_edges, MPI_INT,
+        0, MPI_COMM_WORLD);
+
+    if (rank == 0) {
+        free(sendcounts);
+        free(displs);
+
+        // Edge data of full graph is freed after use
+        // However, the num_nodes and num_edges values remain for later use
+        free_graph(&full_graph);
+    }
+
+    // For local graph data,
+    // local_graph.counts[i-range_start] is the number of edges of node i
+    // local_graph.edges[local_graph.offsets[i-range_start]+j] is the jth edge of the node i
 
     // STEPS 2-5 ---------------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
 
     // ranks[i] will be the rank of the process handling node i
-    int *ranks = (int*) malloc(graph.num_nodes * sizeof(int));
+    int *ranks = (int*) malloc(full_graph.num_nodes * sizeof(int));
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < range_sizes[i]; j++) {
             ranks[range_starts[i]+j] = i;
@@ -257,9 +252,15 @@ int main(int argc, char** argv)
 
     // Initialize labels array
     // Not used for labels yet, just used now to avoid needing to allocate extra space
-    int *temp1 = (int*) malloc(graph.num_nodes * sizeof(int));
-    for (int i = 0; i < graph.num_nodes; i++) {
+    int *temp1 = (int*) malloc(full_graph.num_nodes * sizeof(int));
+    for (int i = 0; i < full_graph.num_nodes; i++) {
         temp1[i] = 0;
+    }
+
+    // Initialize indices to 0
+    int *indices = (int*) malloc(size * sizeof(int)); // Current position in each subarray
+    for (int i = 0; i < size; i++) {
+        indices[i] = 0;
     }
 
     // First pass over edges array
@@ -269,8 +270,8 @@ int main(int argc, char** argv)
             temp2[j] = 0;
         }
 
-        for (int j = 0; j < graph.counts[i]; j++) {
-            int edge = graph.edges[graph.offsets[i]+j];
+        for (int j = 0; j < local_graph.counts[i]; j++) {
+            int edge = local_graph.edges[local_graph.offsets[i]+j];
             int edge_rank = ranks[edge];
 
             // Skip edges handled by the same process
@@ -300,14 +301,10 @@ int main(int argc, char** argv)
     recv_data.labels = (int*) malloc(recv_data.num_labels * sizeof(int));
 
     int idx = 0;
-    int *indices = (int*) malloc(size * sizeof(int)); // Current position in each subarray
     for (int i = 0; i < size; i++) {
         // Compute displacements
         send_data.displs[i] = idx;
         idx += send_data.counts[i];
-
-        // Initialize indices
-        indices[i] = 0;
     }
 
     // Determine what labels will need to be sent to each process
@@ -316,8 +313,8 @@ int main(int argc, char** argv)
             temp2[j] = 0;
         }
 
-        for (int j = 0; j < graph.counts[i]; j++) {
-            int edge = graph.edges[graph.offsets[i]+j];
+        for (int j = 0; j < local_graph.counts[i]; j++) {
+            int edge = local_graph.edges[local_graph.offsets[i]+j];
             int edge_rank = ranks[edge];
 
             // Skip edges handled by the same process
@@ -383,8 +380,8 @@ int main(int argc, char** argv)
 
             // Find the highest label among self and edges
             int min_label = cur_label;
-            for (int j = 0; j < graph.counts[i]; j++) {
-                int edge = graph.edges[graph.offsets[i]+j];
+            for (int j = 0; j < local_graph.counts[i]; j++) {
+                int edge = local_graph.edges[local_graph.offsets[i]+j];
 
                 // Get label
                 int label;
@@ -418,7 +415,7 @@ int main(int argc, char** argv)
     // Gather all labels at first process
     int* labels = NULL;
     if (rank == 0) {
-        labels = (int*) malloc(graph.num_nodes * sizeof(int));
+        labels = (int*) malloc(full_graph.num_nodes * sizeof(int));
     }
 
     MPI_Gatherv(
@@ -434,14 +431,12 @@ int main(int argc, char** argv)
     if (rank == 0) {
         print_time25(t2-t0);
         print_time5(t2-t1);
-        print_labels(argv[2], (unsigned int*) labels, graph.num_nodes);
+        print_labels(argv[2], (unsigned int*) labels, full_graph.num_nodes);
         free(labels);
     }
 
-    // Free graph data arrays
-    free(graph.counts);
-    free(graph.offsets);
-    free(graph.edges);
+    // Free local graph data arrays
+    free_graph(&local_graph);
 
     // Free send data arrays
     free(send_data.nodes);

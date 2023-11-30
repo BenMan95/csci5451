@@ -95,3 +95,10 @@ void load_graph(
     free(data);
     fclose(fh);
 }
+
+void free_graph(graph_t *graph)
+{
+    free(graph->counts);
+    free(graph->offsets);
+    free(graph->edges);
+}
