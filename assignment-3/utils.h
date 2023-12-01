@@ -59,6 +59,6 @@ void load_graph(
  *
  * @param graph The graph whose data to free
  */
-void free_graph(graph_t *graph);
+void free_graph_arrays(graph_t *graph);
 
 #endif

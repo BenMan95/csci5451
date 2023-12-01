@@ -96,7 +96,7 @@ void load_graph(
     fclose(fh);
 }
 
-void free_graph(graph_t *graph)
+void free_graph_arrays(graph_t *graph)
 {
     free(graph->counts);
     free(graph->offsets);

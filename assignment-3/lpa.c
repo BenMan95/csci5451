@@ -201,7 +201,7 @@ int main(int argc, char** argv)
 
         // Edge data of full graph is freed after use
         // However, the num_nodes and num_edges values remain for later use
-        free_graph(&full_graph);
+        free_graph_arrays(&full_graph);
     }
 
     // For local graph data:
@@ -268,7 +268,7 @@ int main(int argc, char** argv)
                 continue;
             }
 
-            // Increase send counts
+            // Increment send counts
             if (!checked) {
                 checked = 1;
                 send_data.num_labels++;
@@ -278,20 +278,19 @@ int main(int argc, char** argv)
 
     }
 
+    int *indices = (int*) malloc(size * sizeof(int));
+    for (int i = 0; i < size; i++) {
+        // Compute displacements and total number of labels
+        send_data.displs[i] = send_data.num_labels;
+        send_data.num_labels += send_data.counts[i];
+
+        // Initialize index array
+        indices[i] = 0;
+    }
+
     // Allocate arrays for sent data
     send_data.nodes = (int*) malloc(send_data.num_labels * sizeof(int));
     send_data.labels = (int*) malloc(send_data.num_labels * sizeof(int));
-
-    int idx = 0;
-    int *indices = (int*) malloc(size * sizeof(int));
-    for (int i = 0; i < size; i++) {
-        // Compute displacements
-        send_data.displs[i] = idx;
-        idx += send_data.counts[i];
-
-        // Initialize index
-        indices[i] = 0;
-    }
 
     // Determine what labels will need to be sent to each process
     for (int i = 0; i < range_size; i++) {
@@ -342,7 +341,7 @@ int main(int argc, char** argv)
     recv_data.nodes = (int*) malloc(recv_data.num_labels * sizeof(int));
     recv_data.labels = (int*) malloc(recv_data.num_labels * sizeof(int));
 
-    // Processors share info about what labels they will need to send/recieve
+    // Processors share which labels they will need to send/recieve data for
     MPI_Alltoallv(
         send_data.nodes, send_data.counts, send_data.displs, MPI_INT,
         recv_data.nodes, recv_data.counts, recv_data.displs, MPI_INT,
@@ -378,7 +377,7 @@ int main(int argc, char** argv)
     // Iterate until convergence
     int converge = 0;
     while (!converge) {
-        // Load labels to send buffer
+        // Load labels into send buffer
         for (int i = 0; i < send_data.num_labels; i++) {
             send_data.labels[i] = local_labels[send_data.nodes[i] - range_start];
         }
@@ -389,12 +388,12 @@ int main(int argc, char** argv)
             recv_data.labels, recv_data.counts, recv_data.displs, MPI_INT,
             MPI_COMM_WORLD);
 
-        // Recheck labels and check convergence
+        // Recompute labels and check convergence
         converge = 1;
         for (int i = 0; i < range_size; i++) {
             int cur_label = local_labels[i];
 
-            // Find the highest label among self and edges
+            // Find the minimum label among self and edges
             int min_label = cur_label;
             for (int j = 0; j < local_graph.counts[i]; j++) {
                 int label = *label_ptrs[local_graph.offsets[i]+j];
@@ -440,7 +439,11 @@ int main(int argc, char** argv)
     }
 
     // Free local graph data arrays
-    free_graph(&local_graph);
+    free_graph_arrays(&local_graph);
+
+    // Free ranges
+    free(range_starts);
+    free(range_sizes);
 
     // Free send data arrays
     free(send_data.nodes);
@@ -453,10 +456,6 @@ int main(int argc, char** argv)
     free(recv_data.labels);
     free(recv_data.counts);
     free(recv_data.displs);
-
-    // Free ranges
-    free(range_sizes);
-    free(range_starts);
 
     // Free other arrays
     free(local_labels);
