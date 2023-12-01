@@ -11,7 +11,7 @@ inputfiles = 1000.txt 10000.txt 100000.txt 1000000.txt
 proccounts = 1 2 4 8 16
 
 zipped_files = lpa.c utils.c utils.h \
-			   report.pdf Makefile
+			   tester.c report.pdf Makefile
 
 cleaned_files = lpa tester *.o
 
@@ -34,27 +34,6 @@ time-all: lpa
 			mpirun -np $$procs ./lpa $(inputdir)/$$input $(outputdir)/$(output); \
 		done; \
 	done
-
-# make run input=1000.txt procs=1
-# make run input=1000.txt procs=2
-# make run input=1000.txt procs=4
-# make run input=1000.txt procs=8
-# make run input=1000.txt procs=16
-# make run input=10000.txt procs=1
-# make run input=10000.txt procs=2
-# make run input=10000.txt procs=4
-# make run input=10000.txt procs=8
-# make run input=10000.txt procs=16
-# make run input=100000.txt procs=1
-# make run input=100000.txt procs=2
-# make run input=100000.txt procs=4
-# make run input=100000.txt procs=8
-# make run input=100000.txt procs=16
-# make run input=1000000.txt procs=1
-# make run input=1000000.txt procs=2
-# make run input=1000000.txt procs=4
-# make run input=1000000.txt procs=8
-# make run input=1000000.txt procs=16
 
 # Test code only checks to make sure all points which share an edge have the same label
 # Will not check to ensure that points which don't share an edge have different labels
