@@ -244,10 +244,10 @@ int main(int argc, char** argv)
         recv_data.displs[i] = 0;
     }
 
-    // First pass over edges array determines how many edges are sent to each other process
+    // First pass over edges array counts how many edges will be sent to each other process
     for (int i = 0; i < range_size; i++) {
 
-        // Whether the current rank has been checked for the current node
+        // Whether the current rank has been checked for the current source node
         int checked = 0;
 
         int edge_rank = 0; // The rank of the current destination node
@@ -348,7 +348,7 @@ int main(int argc, char** argv)
         recv_data.nodes, recv_data.counts, recv_data.displs, MPI_INT,
         MPI_COMM_WORLD);
 
-    // Initialize labels
+    // Initialize local labels
     int *local_labels = (int*) malloc(range_size * sizeof(int));
     for (int i = 0; i < range_size; i++) {
         local_labels[i] = range_start + i;
