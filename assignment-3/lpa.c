@@ -173,7 +173,7 @@ int main(int argc, char** argv)
         local_graph.num_edges += local_graph.counts[i];
     }
 
-    // First process also determines what edges to send to each process
+    // First process also determines what edges it must to send to each process
     int *sendcounts;
     int *displs;
     if (rank == 0) {
@@ -204,21 +204,15 @@ int main(int argc, char** argv)
         free_graph(&full_graph);
     }
 
-    // For local graph data,
-    // local_graph.counts[i-range_start] is the number of edges of node i
-    // local_graph.edges[local_graph.offsets[i-range_start]+j] is the jth edge of the node i
+    // For local graph data:
+    // local_graph.counts[i-range_start]
+    // is the number of edges of node i
+    // local_graph.edges[local_graph.offsets[i-range_start]+j]
+    // is the jth edge of the node i
 
     // STEPS 2-5 ---------------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
-
-    // ranks[i] will be the rank of the process handling node i
-    int *ranks = (int*) malloc(full_graph.num_nodes * sizeof(int));
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < range_sizes[i]; j++) {
-            ranks[range_starts[i]+j] = i;
-        }
-    }
 
     struct {
         int num_labels = 0;
@@ -251,29 +245,37 @@ int main(int argc, char** argv)
     }
 
     // First pass over edges array determines how many edges are sent to each other process
-    int *temp2 = (int*) malloc(size * sizeof(int)); // Used to check which processes are already being sent this node
     for (int i = 0; i < range_size; i++) {
-        for (int j = 0; j < size; j++) {
-            temp2[j] = 0;
-        }
+
+        // Whether the current rank has been checked for the current node
+        int checked = 0;
+
+        int edge_rank = 0; // The rank of the current destination node
+        int rank_end = range_sizes[0]; // The end of that rank's range
 
         for (int j = 0; j < local_graph.counts[i]; j++) {
             int edge = local_graph.edges[local_graph.offsets[i]+j];
-            int edge_rank = ranks[edge];
 
-            // Skip edges handled by the same process
-            if (rank == edge_rank) {
+            // Determine what rank this neighbor belongs to
+            while (edge >= rank_end) {
+                checked = 0;
+                edge_rank++;
+                rank_end += range_sizes[edge_rank];
+            }
+
+            // Skip local edges
+            if (edge_rank == rank) {
                 continue;
             }
 
-            // Count the edges that will need to be sent to other processes
-            if (temp2[edge_rank] == 0) {
-                temp2[edge_rank] = 1;
+            // Increase send counts
+            if (!checked) {
+                checked = 1;
                 send_data.num_labels++;
                 send_data.counts[edge_rank]++;
             }
-
         }
+
     }
 
     // Allocate arrays for sent data
@@ -293,22 +295,31 @@ int main(int argc, char** argv)
 
     // Determine what labels will need to be sent to each process
     for (int i = 0; i < range_size; i++) {
-        for (int j = 0; j < size; j++) {
-            temp2[j] = 0;
-        }
+
+        // Whether the current rank has been checked for the current node
+        int checked = 0;
+
+        int edge_rank = 0; // The rank of the current destination node
+        int rank_end = range_sizes[0]; // The end of that rank's range
 
         for (int j = 0; j < local_graph.counts[i]; j++) {
             int edge = local_graph.edges[local_graph.offsets[i]+j];
-            int edge_rank = ranks[edge];
 
-            // Skip edges handled by the same process
-            if (rank == edge_rank) {
+            // Determine what rank this neighbor belongs to
+            while (edge >= rank_end) {
+                checked = 0;
+                edge_rank++;
+                rank_end += range_sizes[edge_rank];
+            }
+
+            // Skip local edges
+            if (edge_rank == rank) {
                 continue;
             }
 
-            // Add edge to send data
-            if (temp2[edge_rank] == 0) {
-                temp2[edge_rank] = 1;
+            // Add node to send data
+            if (!checked) {
+                checked = 1;
                 int k = indices[edge_rank]++;
                 send_data.nodes[send_data.displs[edge_rank]+k] = range_start+i;
             }
@@ -343,9 +354,6 @@ int main(int argc, char** argv)
         local_labels[i] = range_start + i;
     }
 
-    // Free temporary arrays
-    free(ranks);
-    free(temp2);
     free(indices);
 
     // STEP 5 ------------------------------------------------------------------
