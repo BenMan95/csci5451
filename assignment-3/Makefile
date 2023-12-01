@@ -7,6 +7,9 @@ input = 1000.txt
 output = labels.txt
 procs = 4
 
+inputfiles = 1000.txt 10000.txt 100000.txt 1000000.txt
+proccounts = 1 2 4 8 16
+
 zipped_files = lpa.c utils.c utils.h \
 			   report.pdf Makefile
 
@@ -24,27 +27,34 @@ tester: tester.c
 run: lpa
 	mpirun -np $(procs) ./lpa $(inputdir)/$(input) $(outputdir)/$(output)
 
-time-all:
-	make run input=1000.txt procs=1
-	make run input=1000.txt procs=2
-	make run input=1000.txt procs=4
-	make run input=1000.txt procs=8
-	make run input=1000.txt procs=16
-	make run input=10000.txt procs=1
-	make run input=10000.txt procs=2
-	make run input=10000.txt procs=4
-	make run input=10000.txt procs=8
-	make run input=10000.txt procs=16
-	make run input=100000.txt procs=1
-	make run input=100000.txt procs=2
-	make run input=100000.txt procs=4
-	make run input=100000.txt procs=8
-	make run input=100000.txt procs=16
-	make run input=1000000.txt procs=1
-	make run input=1000000.txt procs=2
-	make run input=1000000.txt procs=4
-	make run input=1000000.txt procs=8
-	make run input=1000000.txt procs=16
+time-all: lpa
+	for input in $(inputfiles); do \
+		for procs in $(proccounts); do \
+			echo input=$$input procs=$$procs; \
+			mpirun -np $$procs ./lpa $(inputdir)/$$input $(outputdir)/$(output); \
+		done; \
+	done
+
+# make run input=1000.txt procs=1
+# make run input=1000.txt procs=2
+# make run input=1000.txt procs=4
+# make run input=1000.txt procs=8
+# make run input=1000.txt procs=16
+# make run input=10000.txt procs=1
+# make run input=10000.txt procs=2
+# make run input=10000.txt procs=4
+# make run input=10000.txt procs=8
+# make run input=10000.txt procs=16
+# make run input=100000.txt procs=1
+# make run input=100000.txt procs=2
+# make run input=100000.txt procs=4
+# make run input=100000.txt procs=8
+# make run input=100000.txt procs=16
+# make run input=1000000.txt procs=1
+# make run input=1000000.txt procs=2
+# make run input=1000000.txt procs=4
+# make run input=1000000.txt procs=8
+# make run input=1000000.txt procs=16
 
 # Test code only checks to make sure all points which share an edge have the same label
 # Will not check to ensure that points which don't share an edge have different labels
