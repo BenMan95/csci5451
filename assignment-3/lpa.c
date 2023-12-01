@@ -268,10 +268,9 @@ int main(int argc, char** argv)
                 continue;
             }
 
-            // Increment send counts
+            // Increment send count for that rank
             if (!checked) {
                 checked = 1;
-                send_data.num_labels++;
                 send_data.counts[edge_rank]++;
             }
         }
