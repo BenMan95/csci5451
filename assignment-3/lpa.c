@@ -250,20 +250,7 @@ int main(int argc, char** argv)
         recv_data.displs[i] = 0;
     }
 
-    // Initialize labels array
-    // Not used for labels yet, just used now to avoid needing to allocate extra space
-    int *temp1 = (int*) malloc(full_graph.num_nodes * sizeof(int));
-    for (int i = 0; i < full_graph.num_nodes; i++) {
-        temp1[i] = 0;
-    }
-
-    // Initialize indices to 0
-    int *indices = (int*) malloc(size * sizeof(int)); // Current position in each subarray
-    for (int i = 0; i < size; i++) {
-        indices[i] = 0;
-    }
-
-    // First pass over edges array
+    // First pass over edges array determines how many edges are sent to each other process
     int *temp2 = (int*) malloc(size * sizeof(int)); // Used to check which processes are already being sent this node
     for (int i = 0; i < range_size; i++) {
         for (int j = 0; j < size; j++) {
@@ -286,25 +273,22 @@ int main(int argc, char** argv)
                 send_data.counts[edge_rank]++;
             }
 
-            // Determine what edges will need to be recieved
-            if (temp1[edge] == 0) {
-                temp1[edge] = 1;
-                recv_data.num_labels++;
-            }
         }
     }
 
-    // Assign memory space
+    // Allocate arrays for sent data
     send_data.nodes = (int*) malloc(send_data.num_labels * sizeof(int));
     send_data.labels = (int*) malloc(send_data.num_labels * sizeof(int));
-    recv_data.nodes = (int*) malloc(recv_data.num_labels * sizeof(int));
-    recv_data.labels = (int*) malloc(recv_data.num_labels * sizeof(int));
 
     int idx = 0;
+    int *indices = (int*) malloc(size * sizeof(int));
     for (int i = 0; i < size; i++) {
         // Compute displacements
         send_data.displs[i] = idx;
         idx += send_data.counts[i];
+
+        // Initialize index
+        indices[i] = 0;
     }
 
     // Determine what labels will need to be sent to each process
@@ -331,18 +315,27 @@ int main(int argc, char** argv)
         }
     }
 
-    // Determine what labels will need to be recieved from each process
-    idx = 0;
+    // Processes share amounts of labels they will send/recieve
+    MPI_Alltoall(
+        send_data.counts, 1, MPI_INT,
+        recv_data.counts, 1, MPI_INT,
+        MPI_COMM_WORLD);
+
+    // Compute displacements for recieved data
     for (int i = 0; i < size; i++) {
-        recv_data.displs[i] = idx;
-        for (int j = 0; j < range_sizes[i]; j++) {
-            int node = range_starts[i] + j;
-            if (temp1[node]) {
-                recv_data.nodes[idx++] = node;
-                recv_data.counts[i]++;
-            }
-        }
+        recv_data.displs[i] = recv_data.num_labels;
+        recv_data.num_labels += recv_data.counts[i];
     }
+
+    // Allocate arrays for recieved data
+    recv_data.nodes = (int*) malloc(recv_data.num_labels * sizeof(int));
+    recv_data.labels = (int*) malloc(recv_data.num_labels * sizeof(int));
+
+    // Processors share info about what labels they will need to send/recieve
+    MPI_Alltoallv(
+        send_data.nodes, send_data.counts, send_data.displs, MPI_INT,
+        recv_data.nodes, recv_data.counts, recv_data.displs, MPI_INT,
+        MPI_COMM_WORLD);
 
     // Initialize labels
     int *local_labels = (int*) malloc(range_size * sizeof(int));
@@ -352,8 +345,8 @@ int main(int argc, char** argv)
 
     // Free temporary arrays
     free(ranks);
-    free(temp1);
     free(temp2);
+    free(indices);
 
     // STEP 5 ------------------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
