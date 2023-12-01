@@ -210,10 +210,11 @@ int main(int argc, char** argv)
     // local_graph.edges[local_graph.offsets[i-range_start]+j]
     // is the jth edge of the node i
 
-    // STEPS 2-5 ---------------------------------------------------------------
+    //// STEPS 2-5 -------------------------------------------------------------
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
 
+    // STEP 2-3 ----------------------------------------------------------------
     struct {
         int num_labels = 0;
         int *nodes; // The node that each label is for
@@ -222,26 +223,13 @@ int main(int argc, char** argv)
         int *displs;
     } send_data;
 
-    struct {
-        int num_labels = 0; // The number of labels to recieve
-        int *nodes; // The node that each label is for
-        int *labels; // Array for labels to recieve
-        int *counts;
-        int *displs;
-    } recv_data;
-
-    // Assign arrays for counts and displacements
+    // Allocate arrays for counts and displacements
     send_data.counts = (int*) malloc(size * sizeof(int));
     send_data.displs = (int*) malloc(size * sizeof(int));
-    recv_data.counts = (int*) malloc(size * sizeof(int));
-    recv_data.displs = (int*) malloc(size * sizeof(int));
 
-    // Initialize those arrays
+    // Initialize counts array of send data
     for (int i = 0; i < size; i++) {
         send_data.counts[i] = 0;
-        send_data.displs[i] = 0;
-        recv_data.counts[i] = 0;
-        recv_data.displs[i] = 0;
     }
 
     // First pass over edges array counts how many edges will be sent to each other process
@@ -277,13 +265,13 @@ int main(int argc, char** argv)
 
     }
 
+    // Compute displacements and label count
     int *indices = (int*) malloc(size * sizeof(int));
     for (int i = 0; i < size; i++) {
-        // Compute displacements and total number of labels
         send_data.displs[i] = send_data.num_labels;
         send_data.num_labels += send_data.counts[i];
 
-        // Initialize index array
+        // Initialize indices array
         indices[i] = 0;
     }
 
@@ -323,6 +311,20 @@ int main(int argc, char** argv)
             }
         }
     }
+
+    // STEP 4 ------------------------------------------------------------------
+
+    struct {
+        int num_labels = 0; // The number of labels to recieve
+        int *nodes; // The node that each label is for
+        int *labels; // Array for labels to recieve
+        int *counts;
+        int *displs;
+    } recv_data;
+
+    // Allocate arrays for counts and displacements
+    recv_data.counts = (int*) malloc(size * sizeof(int));
+    recv_data.displs = (int*) malloc(size * sizeof(int));
 
     // Processes share amounts of labels they will send/recieve
     MPI_Alltoall(
