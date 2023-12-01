@@ -354,6 +354,21 @@ int main(int argc, char** argv)
         local_labels[i] = range_start + i;
     }
 
+    // For each edge, create a pointer to the corresponding label
+    int **label_ptrs = (int**) malloc(local_graph.num_edges * sizeof(int*));
+    for (int i = 0; i < local_graph.num_edges; i++) {
+        int edge = local_graph.edges[i];
+
+        if (edge >= range_start && edge < range_end) {
+            // Read from local labels if in range
+            label_ptrs[i] = &local_labels[edge - range_start];
+        } else {
+            // Otherwise read from recieved labels
+            int k = binary_search(recv_data.nodes, recv_data.num_labels, edge);
+            label_ptrs[i] = &recv_data.labels[k];
+        }
+    }
+
     free(indices);
 
     // STEP 5 ------------------------------------------------------------------
@@ -382,19 +397,7 @@ int main(int argc, char** argv)
             // Find the highest label among self and edges
             int min_label = cur_label;
             for (int j = 0; j < local_graph.counts[i]; j++) {
-                int edge = local_graph.edges[local_graph.offsets[i]+j];
-
-                // Get label
-                int label;
-                if (edge < range_start || edge >= range_start+range_size) {
-                    // Read from recieved labels if not in range
-                    int k = binary_search(recv_data.nodes, recv_data.num_labels, edge);
-                    label = recv_data.labels[k];
-                } else {
-                    // Else read from local labels
-                    label = local_labels[edge - range_start];
-                }
-
+                int label = *label_ptrs[local_graph.offsets[i]+j];
                 if (label < min_label) {
                     min_label = label;
                 }
@@ -457,6 +460,7 @@ int main(int argc, char** argv)
 
     // Free other arrays
     free(local_labels);
+    free(label_ptrs);
 
     MPI_Finalize();
     return 0;
