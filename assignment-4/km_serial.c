@@ -120,6 +120,15 @@ void output_centroids(points_t centroids)
     fclose(fh);
 }
 
+/**
+ * @brief Determine the nearest centroid to a point
+ * 
+ * @param centroids The list of centroids to use
+ * @param point The point to determine the nearest centroid for
+ *              The dimension should match the dimension of the centroids list
+ * 
+ * @returns The index of the nearest centroid
+ */
 int nearest_centroid(points_t centroids, double* point)
 {
     double best_dist = DBL_MAX; // Uses squared distance
@@ -141,6 +150,71 @@ int nearest_centroid(points_t centroids, double* point)
     }
 
     return best_centroid;
+}
+
+/**
+ * @brief Computes new centroids based on current clusters
+ * 
+ * @param centroids Where to write the new centroids to
+ * @param points Where to read the points from
+ * @param clusters The current cluster each point is assigned to
+ * @param counts An array to be used for temporary storage
+ */
+void compute_centroids(points_t centroids, points_t points, int* clusters, int* counts)
+{
+    // Initialize counts/centroids to 0
+    for (int i = 0; i < centroids.num; i++) {
+        counts[i] = 0;
+        for (int j = 0; j < centroids.dim; j++) {
+            int idx = i*centroids.dim + j;
+            centroids.coords[idx] = 0;
+        }
+    }
+
+    // Compute coordinate sums and counts for each cluster
+    for (int i = 0; i < points.num; i++) {
+        int cluster = clusters[i];
+        counts[cluster]++;
+        for (int j = 0; j < points.dim; j++) {
+            int c_idx = cluster*centroids.dim + j;
+            int p_idx = i*points.dim + j;
+            centroids.coords[c_idx] += points.coords[p_idx];
+        }
+    }
+
+    // Divide to get averages
+    for (int i = 0; i < centroids.num; i++) {
+        int count = counts[i];
+        for (int j = 0; j < centroids.dim; j++) {
+            int idx = i*centroids.dim + j;
+            centroids.coords[idx] = centroids.coords[idx] / count;
+        }
+    }
+}
+
+/**
+ * @brief Assigns clusters for a set of points and centroids
+ * 
+ * @param points The points to assign clusters for
+ * @param centroids The centroids to assigne clusters to
+ * @param clusters Where to write cluster assignments to
+ * 
+ * @returns If cluster assignments have converged
+ */
+int assign_clusters(points_t points, points_t centroids, int* clusters)
+{
+    int converged = 1;
+    for (int i = 0; i < points.num; i++) {
+        // Determine new cluster
+        int new = nearest_centroid(centroids, points.coords + i*points.dim);
+
+        // Update cluster if necessary
+        if (new != clusters[i]) {
+            converged = 0;
+            clusters[i] = new;
+        }
+    }
+    return converged;
 }
 
 int main(int argc, char** argv)
@@ -181,47 +255,8 @@ int main(int argc, char** argv)
     int iters = 0;
     int converged = 0;
     while (!converged && iters < 20) {
-        // Initialize counts/centroids to 0
-        for (int i = 0; i < centroids.num; i++) {
-            counts[i] = 0;
-            for (int j = 0; j < centroids.dim; j++) {
-                centroids.coords[i*centroids.dim + j] = 0;
-            }
-        }
-
-        // Compute coordinate sums and counts for each cluster
-        for (int i = 0; i < points.num; i++) {
-            int cluster = clusters[i];
-            counts[cluster]++;
-            for (int j = 0; j < points.dim; j++) {
-                int c_idx = cluster*centroids.dim + j;
-                int p_idx = i*points.dim + j;
-                centroids.coords[c_idx] += points.coords[p_idx];
-            }
-        }
-
-        // Divide to get averages
-        for (int i = 0; i < centroids.num; i++) {
-            int count = counts[i];
-            for (int j = 0; j < centroids.dim; j++) {
-                int idx = i*centroids.dim + j;
-                centroids.coords[idx] = centroids.coords[idx] / count;
-            }
-        }
-
-        // Reassign clusters
-        converged = 1;
-        for (int i = 0; i < points.num; i++) {
-            // Determine new cluster
-            int new = nearest_centroid(centroids, points.coords + i*points.dim);
-
-            // Update cluster if necessary
-            if (new != clusters[i]) {
-                converged = 0;
-                clusters[i] = new;
-            }
-        }
-
+        compute_centroids(centroids, points, clusters, counts);
+        converged = assign_clusters(points, centroids, clusters);
         iters++;
     }
 

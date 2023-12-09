@@ -1,62 +1,58 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-__global__ void add(int *a, int *b, int *c)
+__global__ void write(int *arr)
 {
+    int total = gridDim.x * blockDim.x;
     int index = blockIdx.x*blockDim.x + threadIdx.x;
-    c[index] = a[index] + b[index];
+    arr[index] = total;
 }
 
 __global__ void count(int *k) {
-    *k = *k + 1;
+    int total = gridDim.x * blockDim.x;
+    int idx = blockIdx.x*blockDim.x + threadIdx.x;
+    for (int i = 0; i < total; i++) {
+        __syncthreads();
+        if (i == idx)
+            *k += 1;
+    }
 }
 
 int main(int argc, char** argv)
 {
-    int n = 5;
-    size_t size = n * sizeof(int);
+    int k = 0;
+    int *d_k;
+    cudaMalloc((void**) &d_k, sizeof(int));
+    cudaMemcpy(d_k, &k, sizeof(int), cudaMemcpyHostToDevice);
 
-    int *a = (int*) malloc(size);
-    int *b = (int*) malloc(size);
-    int *c = (int*) malloc(size);
+    count<<<2,6>>>(d_k);
 
-    int *d_a, *d_b, *d_c;
-    cudaMalloc((void**) &d_a, size);
-    cudaMalloc((void**) &d_b, size);
-    cudaMalloc((void**) &d_c, size);
+    cudaDeviceSynchronize();
+    cudaMemcpy(&k, d_k, sizeof(int), cudaMemcpyDeviceToHost);
 
-    for (int i = 0; i < n; i++) {
-        a[i] = i;
-        b[i] = i+1;
-    }
+    printf("count: %d\n", k);
+    cudaFree(d_k);
 
-    cudaMemcpy(d_a, a, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, b, size, cudaMemcpyHostToDevice);
+    // int n = 16;
+    // size_t size = n * sizeof(int);
 
-    add<<<1,n>>>(d_a, d_b, d_c); 
+    // int *arr = (int*) malloc(size);
+    // int *d_arr;
+    // cudaMalloc((void**) &d_arr, size);
 
-    cudaMemcpy(c, d_c, size, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(d_arr, arr, size, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_b, b, size, cudaMemcpyHostToDevice);
 
-    for (int i = 0; i < n; i++) {
-        printf("%d + %d = %d\n", a[i], b[i], c[i]);
-    }
+    // write<<<4,4>>>(d_arr); 
 
-    // int k = 0;
-    // int *d_k;
-    // cudaMalloc((void**) &d_k, sizeof(int));
-    // cudaMemcpy(d_k, &k, sizeof(int), cudaMemcpyHostToDevice);
-    // count<<<1,3>>>(d_k);
-    // cudaMemcpy(&k, d_k, sizeof(int), cudaMemcpyDeviceToHost);
-    // printf("count: %d\n", k);
-    // cudaFree(d_k);
+    // cudaMemcpy(arr, d_arr, size, cudaMemcpyDeviceToHost);
 
-    free(a);
-    free(b);
-    free(c);
+    // for (int i = 0; i < n; i++) {
+    //     printf("%d\n", arr[i]);
+    // }
 
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_c);
+    // free(arr);
+    // cudaFree(d_arr);
 
     return 0;
 }
