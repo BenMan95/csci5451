@@ -178,8 +178,9 @@ int main(int argc, char** argv)
         clusters[i] = nearest_centroid(centroids, points.coords + i*points.dim);
     }
 
+    int iters = 0;
     int converged = 0;
-    while (!converged) {
+    while (!converged && iters < 20) {
         // Initialize counts/centroids to 0
         for (int i = 0; i < centroids.num; i++) {
             counts[i] = 0;
@@ -220,6 +221,8 @@ int main(int argc, char** argv)
                 clusters[i] = new;
             }
         }
+
+        iters++;
     }
 
     // OUTPUT RESULTS / CLEAN UP -----------------------------------------------
