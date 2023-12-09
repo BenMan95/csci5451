@@ -7,6 +7,10 @@ __global__ void add(int *a, int *b, int *c)
     c[index] = a[index] + b[index];
 }
 
+__global__ void count(int *k) {
+    *k = *k + 1;
+}
+
 int main(int argc, char** argv)
 {
     int n = 5;
@@ -37,6 +41,15 @@ int main(int argc, char** argv)
         printf("%d + %d = %d\n", a[i], b[i], c[i]);
     }
 
+    // int k = 0;
+    // int *d_k;
+    // cudaMalloc((void**) &d_k, sizeof(int));
+    // cudaMemcpy(d_k, &k, sizeof(int), cudaMemcpyHostToDevice);
+    // count<<<1,3>>>(d_k);
+    // cudaMemcpy(&k, d_k, sizeof(int), cudaMemcpyDeviceToHost);
+    // printf("count: %d\n", k);
+    // cudaFree(d_k);
+
     free(a);
     free(b);
     free(c);
@@ -44,5 +57,6 @@ int main(int argc, char** argv)
     cudaFree(d_a);
     cudaFree(d_b);
     cudaFree(d_c);
+
     return 0;
 }

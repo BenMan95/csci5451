@@ -3,15 +3,15 @@ inputdir = dataset
 
 # Arguments for testing
 input = small_gaussian.txt
-clusters = 3
-blocks = 4
-threads = 4
+clusters = 2
+blocks = 8
+threads = 32
 
 # inputfiles = 1000.txt 10000.txt 100000.txt 1000000.txt
 # proccounts = 1 2 4 8 16
 
 zipped_files = km_cuda.c report.pdf Makefile
-cleaned_files = km_cuda *.o
+cleaned_files = km_cuda km_serial test *.o
 
 # Rules for building programs
 all: km_cuda
@@ -22,24 +22,28 @@ km_cuda: km_cuda.cu
 run: km_cuda
 	./km_cuda $(inputdir)/$(input) $(clusters) $(blocks) $(threads)
 
-example: example.cu
-	nvcc -o example example.cu
+km_serial: km_serial.c
+	gcc -o km_serial km_serial.c
 
-run-ex: example
-	./example
+run-serial: km_serial
+	./km_serial $(inputdir)/$(input) $(clusters)
 
-# time-all: lpa
-# 	for input in $(inputfiles); do \
-# 		for procs in $(proccounts); do \
-# 			echo input=$$input procs=$$procs; \
-# 			mpirun -np $$procs ./lpa $(inputdir)/$$input $(outputdir)/$(output); \
-# 		done; \
-# 	done
+test: test.cu
+	nvcc -o test test.cu
+
+run-test: test
+	./test
 
 # Utility rules
 clean:
 	rm -f $(cleaned_files)
 
+# Moves outputted data to the plot directory for viewing
+move-output:
+	mv centroids.txt plot/centroids.txt
+	mv clusters.txt plot/clusters.txt
+
+# Zips up files for submission
 zip: clean
 	mkdir $(id)
 	cp $(zipped_files) $(id)
