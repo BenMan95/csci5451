@@ -7,9 +7,6 @@ clusters = 2
 blocks = 8
 threads = 32
 
-# inputfiles = 1000.txt 10000.txt 100000.txt 1000000.txt
-# proccounts = 1 2 4 8 16
-
 zipped_files = km_cuda.c report.pdf Makefile
 cleaned_files = km_cuda km_serial test *.o
 

@@ -239,7 +239,7 @@ int main(int argc, char** argv)
     int* clusters = malloc(points.num * sizeof(int)); // The cluster each point is assigned to
     int* counts = malloc(centroids.num * sizeof(int)); // The number of points assigned to each cluster
 
-    // INITIALIZE ALGORITHM ----------------------------------------------------
+    // PERFORM ALGORITHM -------------------------------------------------------
     double t0 = monotonic_seconds();
 
     // Select initial K centroids
@@ -250,14 +250,17 @@ int main(int argc, char** argv)
     // Assign initial clusters
     for (int i = 0; i < points.num; i++) {
         clusters[i] = nearest_centroid(centroids, points.coords + i*points.dim);
+        printf("%d\n", clusters[i]);
     }
 
+    // Perform algorithm until convergence or iteration limit
     int iters = 0;
     int converged = 0;
-    while (!converged && iters < 20) {
+    while (!converged && iters < MAX_ITERS) {
         compute_centroids(centroids, points, clusters, counts);
         converged = assign_clusters(points, centroids, clusters);
         iters++;
+        printf("%d %d\n", iters, converged);
     }
 
     // OUTPUT RESULTS / CLEAN UP -----------------------------------------------
