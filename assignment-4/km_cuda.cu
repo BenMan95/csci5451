@@ -213,6 +213,7 @@ __global__ void compute_centroids(points_t points,
     // Divide to get averages
     for (int i = range_start; i < range_end; i++) {
         int count = counts[i];
+        if (count == 0) continue;
         for (int j = 0; j < centroids.dim; j++) {
             int idx = i*centroids.dim + j;
             centroids.coords[idx] = centroids.coords[idx] / count;

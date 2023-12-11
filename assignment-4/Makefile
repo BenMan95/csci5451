@@ -4,11 +4,11 @@ inputdir = dataset
 # Arguments for testing
 input = small_gaussian.txt
 clusters = 2
-blocks = 8
+blocks = 2
 threads = 32
 
-zipped_files = km_cuda.c report.pdf Makefile
-cleaned_files = km_cuda km_serial test *.o
+zipped_files = km_cuda.cu km_serial.c report.pdf Makefile
+cleaned_files = km_cuda km_serial *.o
 
 # Rules for building programs
 all: km_cuda
@@ -42,6 +42,7 @@ time-all:
 	./km_cuda $(inputdir)/large_cpd.txt 1024 16 64
 	./km_cuda $(inputdir)/large_cpd.txt 1024 4 128
 	./km_cuda $(inputdir)/large_cpd.txt 1024 8 128
+	./km_cuda $(inputdir)/large_cpd.txt 1024 16 128
 
 # Utility rules
 clean:
