@@ -25,11 +25,23 @@ km_serial: km_serial.c
 run-serial: km_serial
 	./km_serial $(inputdir)/$(input) $(clusters)
 
-test: test.cu
-	nvcc -o test test.cu
-
-run-test: test
-	./test
+time-all:
+	./km_cuda $(inputdir)/large_cpd.txt 256 2 32
+	./km_cuda $(inputdir)/large_cpd.txt 256 4 32
+	./km_cuda $(inputdir)/large_cpd.txt 256 2 64
+	./km_cuda $(inputdir)/large_cpd.txt 256 4 64
+	./km_cuda $(inputdir)/large_cpd.txt 512 4 32
+	./km_cuda $(inputdir)/large_cpd.txt 512 8 32
+	./km_cuda $(inputdir)/large_cpd.txt 512 4 64
+	./km_cuda $(inputdir)/large_cpd.txt 512 8 64
+	./km_cuda $(inputdir)/large_cpd.txt 1024 4 32
+	./km_cuda $(inputdir)/large_cpd.txt 1024 8 32
+	./km_cuda $(inputdir)/large_cpd.txt 1024 16 32
+	./km_cuda $(inputdir)/large_cpd.txt 1024 4 64
+	./km_cuda $(inputdir)/large_cpd.txt 1024 8 64
+	./km_cuda $(inputdir)/large_cpd.txt 1024 16 64
+	./km_cuda $(inputdir)/large_cpd.txt 1024 4 128
+	./km_cuda $(inputdir)/large_cpd.txt 1024 8 128
 
 # Utility rules
 clean:

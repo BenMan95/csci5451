@@ -109,10 +109,7 @@ void output_centroids(points_t centroids)
     fprintf(fh, "%d %d\n", centroids.num, centroids.dim);
     for (int i = 0; i < centroids.num; i++) {
         for (int j = 0; j < centroids.dim; j++) {
-            if (j != 0) {
-                fprintf(fh, " ");
-            }
-            fprintf(fh, "%lf", centroids.coords[i*centroids.dim + j]);
+            fprintf(fh, "%s%lf", j ? " " : "", centroids.coords[i*centroids.dim + j]);
         }
         fprintf(fh, "\n");
     }
@@ -129,7 +126,7 @@ void output_centroids(points_t centroids)
  * 
  * @returns The index of the nearest centroid
  */
-int nearest_centroid(points_t centroids, double* point)
+__device__ int nearest_centroid(points_t centroids, double* point)
 {
     double best_dist = DBL_MAX; // Uses squared distance
     int best_centroid;
@@ -153,104 +150,11 @@ int nearest_centroid(points_t centroids, double* point)
 }
 
 /**
- * @brief Computes new centroids based on current clusters
+ * @brief Initialize the centroid struct to the first K points
  * 
- * @param centroids Where to write the new centroids to
- * @param points Where to read the points from
- * @param clusters The current cluster each point is assigned to
- * @param counts An array to be used for temporary storage
+ * @param points The points to initialize based off of
+ * @param centroids The centroids struct to initialize
  */
-void compute_centroids(points_t centroids, points_t points, int* clusters, int* counts)
-{
-    // Initialize counts/centroids to 0
-    for (int i = 0; i < centroids.num; i++) {
-        counts[i] = 0;
-        for (int j = 0; j < centroids.dim; j++) {
-            int idx = i*centroids.dim + j;
-            centroids.coords[idx] = 0;
-        }
-    }
-
-    // Compute coordinate sums and counts for each cluster
-    for (int i = 0; i < points.num; i++) {
-        int cluster = clusters[i];
-        counts[cluster]++;
-        for (int j = 0; j < points.dim; j++) {
-            int c_idx = cluster*centroids.dim + j;
-            int p_idx = i*points.dim + j;
-            centroids.coords[c_idx] += points.coords[p_idx];
-        }
-    }
-
-    // Divide to get averages
-    for (int i = 0; i < centroids.num; i++) {
-        int count = counts[i];
-        for (int j = 0; j < centroids.dim; j++) {
-            int idx = i*centroids.dim + j;
-            centroids.coords[idx] = centroids.coords[idx] / count;
-        }
-    }
-}
-
-/**
- * @brief Assigns clusters for a set of points and centroids
- * 
- * @param points The points to assign clusters for
- * @param centroids The centroids to assigne clusters to
- * @param clusters Where to write cluster assignments to
- * 
- * @returns If cluster assignments have converged
- */
-int assign_clusters(points_t points, points_t centroids, int* clusters)
-{
-    int converged = 1;
-    for (int i = 0; i < points.num; i++) {
-        // Determine new cluster
-        int cluster = nearest_centroid(centroids, points.coords + i*points.dim);
-
-        // Update cluster if necessary
-        if (cluster != clusters[i]) {
-            converged = 0;
-            clusters[i] = cluster;
-        }
-    }
-    return converged;
-}
-
-
-/**
- * @brief Determine the nearest centroid to a point
- * 
- * @param centroids The list of centroids to use
- * @param point The point to determine the nearest centroid for
- *              The dimension should match the dimension of the centroids list
- * 
- * @returns The index of the nearest centroid
- */
-__device__ int d_nearest_centroid(points_t centroids, double* point)
-{
-    double best_dist = DBL_MAX; // Uses squared distance
-    int best_centroid;
-
-    for (int i = 0; i < centroids.num; i++) {
-        // Compute distance to the ith centroid
-        double dist = 0;
-        for (int j = 0; j < centroids.dim; j++) {
-            double diff = point[j] - centroids.coords[i*centroids.dim + j];
-            dist += diff * diff;
-        }
-
-        // Update the best distance and centroid
-        if (dist < best_dist) {
-            best_dist = dist;
-            best_centroid = i;
-        }
-    }
-
-    return best_centroid;
-}
-
-// Initialize centroids
 __global__ void init_centroids(points_t points,
                                points_t centroids)
 {
@@ -264,24 +168,18 @@ __global__ void init_centroids(points_t points,
     }
 }
 
-// Initialize clusters
-__global__ void init_clusters(points_t points,
-                              points_t centroids,
-                              int* clusters)
-{
-    int stride = gridDim.x * blockDim.x;
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    for (int i = index; i < points.num; i += stride) {
-        double* point_idx = points.coords + i*points.dim;
-        clusters[i] = d_nearest_centroid(centroids, point_idx);
-    }
-}
-// Recompute centroids
-__global__ void d_compute_centroids(points_t points,
-                                    points_t centroids,
-                                    int* clusters,
-                                    int* counts)
+/**
+ * @brief Reassigns each centroid as the average of the points in its cluster
+ * 
+ * @param points The points to recompute centroids for
+ * @param centroids The centroids to recompute
+ * @param clusters Where to read cluster assignments from
+ * @param counts The array to use for counts
+ */
+__global__ void compute_centroids(points_t points,
+                                  points_t centroids,
+                                  int* clusters,
+                                  int* counts)
 {
     // Determine centroid range this block will cover
     int tot_threads = gridDim.x * blockDim.x;
@@ -322,17 +220,26 @@ __global__ void d_compute_centroids(points_t points,
     }
 }
 
-__global__ void d_assign_clusters(points_t points,
-                                  points_t centroids,
-                                  int* clusters,
-                                  char* converged)
+/**
+ * @brief Reassigns each point to the nearest cluster
+ * 
+ * @param points The points to reassign clusters for
+ * @param centroids The centroids for each cluster
+ * @param clusters Where to write cluster assignments to
+ * @param converged Changes this value to 0 if any points changed
+ */
+__global__ void assign_clusters(points_t points,
+                                points_t centroids,
+                                int* clusters,
+                                char* converged)
 {
     int stride = gridDim.x * blockDim.x;
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     for (int i = index; i < points.num; i += stride) {
         // Determine new cluster
-        int cluster = d_nearest_centroid(centroids, points.coords + i*points.dim);
+        double* point_idx = points.coords + i*points.dim;
+        int cluster = nearest_centroid(centroids, point_idx);
 
         // Update cluster if necessary
         if (cluster != clusters[i]) {
@@ -386,10 +293,12 @@ int main(int argc, char** argv)
     d_centroids.dim = centroids.dim;
     cudaMalloc((void**) &d_centroids.coords, c_size * sizeof(double));
 
+    // Allocate device memory for clusters and counts
     int *d_clusters, *d_counts;
     cudaMalloc((void**) &d_clusters, points.num * sizeof(int));
     cudaMalloc((void**) &d_counts, centroids.num * sizeof(int));
 
+    // Allocate device memory for the convergence check
     char *d_converged;
     cudaMalloc((void**) &d_converged, sizeof(char));
 
@@ -398,19 +307,19 @@ int main(int argc, char** argv)
 
     // Initialize centroids and clusters
     init_centroids<<<blocks, threads>>>(d_points, d_centroids);
-    init_clusters<<<blocks, threads>>>(d_points, d_centroids, d_clusters);
+    assign_clusters<<<blocks, threads>>>(d_points, d_centroids, d_clusters, d_converged);
 
     // Perform algorithm until convergence or iteration limit
     for (int i = 0; i < MAX_ITERS; i++) {
-        d_compute_centroids<<<blocks, threads>>>(d_points, d_centroids, d_clusters, d_counts);
+        // Recompute centroids
+        compute_centroids<<<blocks, threads>>>(d_points, d_centroids, d_clusters, d_counts);
 
         // Assume convergence
         char converged = 1;
         cudaMemcpy(d_converged, &converged, sizeof(char), cudaMemcpyHostToDevice);
 
         // Reassign clusters
-        d_assign_clusters<<<blocks, threads>>>(d_points, d_centroids, d_clusters, d_converged);
-        cudaDeviceSynchronize();
+        assign_clusters<<<blocks, threads>>>(d_points, d_centroids, d_clusters, d_converged);
 
         // Break early if converged
         cudaMemcpy(&converged, d_converged, sizeof(char), cudaMemcpyDeviceToHost);
